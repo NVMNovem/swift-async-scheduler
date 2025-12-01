@@ -22,9 +22,9 @@ internal extension Kind {
         switch self {
         case .interval(let duration):
             return duration
-        case .daily(let hour, let minute, let timeZone):
+        case .daily(let hour, let minute, _):
             return .seconds(hour * 3600 + minute * 60)
-        case .cron(let expression):
+        case .cron(_):
             return .seconds(60) //TODO: Implement cron job
         }
     }

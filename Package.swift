@@ -18,7 +18,9 @@ let package = Package(
         ),
         .testTarget(
             name: "AsyncSchedulerTests",
-            dependencies: ["AsyncScheduler"]
+            dependencies: [
+                "AsyncScheduler"
+            ]
         ),
     ]
 )

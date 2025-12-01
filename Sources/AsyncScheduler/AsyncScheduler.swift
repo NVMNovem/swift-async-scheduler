@@ -14,31 +14,63 @@ public actor AsyncScheduler {
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private let clock: any Clock<Duration>
     
+    private var running = false
+    
     public init(clock: any Clock<Duration> = .continuous) {
         self.clock = clock
     }
     
     @discardableResult
     public func schedule(_ job: Job) -> Job.ID {
+        let runner: @Sendable () async -> Void = { [unowned self] in
+            await self.execute(job)
+        }
+        
+        let task = Task {
+            await runner()
+        }
+        
+        tasks[job.id] = task
         return job.id
     }
     
     public func cancel(_ id: UUID) {
-        
+        if let task = tasks.removeValue(forKey: id) {
+            task.cancel()
+        }
     }
     
     public func cancelAll() {
-        
+        for task in tasks.values {
+            task.cancel()
+        }
+        tasks.removeAll()
     }
 }
 
 private extension AsyncScheduler {
     
-    func run(_ job: Job) async {
+    func execute(_ job: Job) async {
         while !Task.isCancelled {
             do {
                 try await clock.sleep(for: job.schedule.sleep)
-                try await job.action()
+                if running {
+                    switch job.overrunPolicy {
+                    case .skip:
+                        continue
+                    case .wait:
+                        while running { try await clock.sleep(for: .milliseconds(10)) }
+                    case .overlap:
+                        break //TODO: allow overlapping runs
+                    }
+                }
+                
+                self.running = true
+                
+                Task {
+                    defer { self.running = false }
+                    try await job.action()
+                }
             } catch {
                 //TODO: Create a logger to log the error
                 switch job.errorPolicy {
