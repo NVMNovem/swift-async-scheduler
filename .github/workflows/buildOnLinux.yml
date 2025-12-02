@@ -1,0 +1,19 @@
+name: Linux
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: swift:6.2.0-jammy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build --disable-sandbox
+
+      - name: Test
+        run: swift test --disable-sandbox
