@@ -11,10 +11,10 @@ public actor AsyncScheduler {
     
     public typealias Job = ScheduledJob
     
-    private var tasks: [UUID: Task<Void, Never>] = [:]
     private let clock: any Clock<Duration>
     
-    private var running = false
+    private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var jobStates: [UUID: JobState] = [:]
     
     public init(clock: any Clock<Duration> = .continuous) {
         self.clock = clock
@@ -54,21 +54,21 @@ private extension AsyncScheduler {
         while !Task.isCancelled {
             do {
                 try await clock.sleep(for: job.schedule.sleep)
-                if running {
+                if jobStates[job.id] == .running {
                     switch job.overrunPolicy {
                     case .skip:
                         continue
                     case .wait:
-                        while running { try await clock.sleep(for: .milliseconds(10)) }
+                        while jobStates[job.id] == .running { try await clock.sleep(for: .milliseconds(10)) }
                     case .overlap:
                         break //TODO: allow overlapping runs
                     }
                 }
                 
-                self.running = true
+                jobStates[job.id] = .running
                 
                 Task {
-                    defer { self.running = false }
+                    defer { jobStates.removeValue(forKey: job.id) }
                     try await job.action()
                 }
             } catch {
