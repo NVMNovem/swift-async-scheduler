@@ -8,15 +8,17 @@ Swift Async Scheduler is a small, dependency-free Swift package for scheduling a
 
 This package provides a lightweight API for creating recurring and scheduled async jobs, intended for use in server- and app-side Swift code as well as test environments. It intentionally avoids external dependencies — it's written in plain Swift and integrates with the Swift concurrency model.
 
-Key features
+
+## Platform Compatibility
+This Swift package is designed to run on:
+- ![macOS](https://github.com/NVMNovem/swift-async-scheduler/actions/workflows/buildOnMacOS.yml/badge.svg)
+- ![Linux](https://github.com/NVMNovem/swift-async-scheduler/actions/workflows/buildOnLinux.yml/badge.svg)
+
+## Key features
 - Dependency-free: no third-party packages required. Works with the Swift standard library and Swift Concurrency.
 - Easy scheduling API: convenience helpers to schedule repeating and one-off async jobs.
 - Test-friendly: includes a `TestClock` in the test target to drive time deterministically.
 - Small, focused core: types like `Schedule`, `ScheduledJob`, and policies (e.g. `OverrunPolicy`, `ErrorPolicy`) let you control behavior when jobs overlap or throw.
-
-Why use this package
-- If you need a simple, no-friction scheduler for periodic background work (polling, maintenance tasks, quick cron-like jobs) without pulling in a dependency graph, this package fits well.
-- If you write tests that need deterministic time control, the included test helpers make asserting scheduling behavior straightforward.
 
 ## Installation
 
