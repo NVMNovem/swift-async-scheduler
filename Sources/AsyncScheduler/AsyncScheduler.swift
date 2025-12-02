@@ -11,15 +11,11 @@ public actor AsyncScheduler {
     
     public typealias Job = ScheduledJob.ID
     
-    private let clock: any Clock<Duration>
-    
     private var tasks: [Job : Task<Void, Never>] = [:]
     private var jobStates: [Job : JobState] = [:]
-    
-    public init(clock: any Clock<Duration> = .continuous) {
-        self.clock = clock
-    }
-    
+
+    public init() { }
+
     @discardableResult
     public func schedule(_ scheduledJob: ScheduledJob) -> Job {
         let runner: @Sendable () async -> Void = { [unowned self] in
@@ -56,13 +52,16 @@ private extension AsyncScheduler {
         let job = scheduledJob.job
         while !Task.isCancelled {
             do {
-                try await clock.sleep(for: scheduledJob.schedule.sleep)
+                try await sleep(for: scheduledJob.schedule.sleep)
+
                 if jobStates[job] == .running {
                     switch scheduledJob.overrunPolicy {
                     case .skip:
                         continue
                     case .wait:
-                        while jobStates[job] == .running { try await clock.sleep(for: .milliseconds(10)) }
+                        while jobStates[job] == .running {
+                            try await sleep(for: .milliseconds(10))
+                        }
                     case .overlap:
                         break //TODO: allow overlapping runs
                     }
@@ -82,9 +81,17 @@ private extension AsyncScheduler {
                 case .stop:
                     return
                 case .retry(backoff: let backoff):
-                    try? await clock.sleep(for: backoff)
+                    try? await sleep(for: backoff)
                 }
             }
         }
+    }
+}
+
+fileprivate extension AsyncScheduler {
+    
+    func sleep(for duration: Duration) async throws {
+        let ns = duration.nanosecondsApprox
+        try await Task.sleep(nanoseconds: ns)
     }
 }
