@@ -5,6 +5,8 @@
 //  Created by Damian Van de Kauter on 01/12/2025.
 //
 
+import Foundation
+
 public extension AsyncScheduler {
     
     @discardableResult
@@ -28,13 +30,13 @@ public extension AsyncScheduler {
     
     @discardableResult
     func daily(
-        hour: Int, minute: Int,
+        on hour: Int, _ minute: Int, timeZone: TimeZone = .current,
         name: String? = nil,
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable () async throws -> Void
     ) -> Job.ID {
-        var job = Job(name, schedule: .daily(hour: hour, minute: minute), action: action)
+        var job = Job(name, schedule: .daily(hour: hour, minute: minute, timeZone: timeZone), action: action)
         
         job.withErrorPolicy(errorPolicy)
         job.overrunPolicy(overrunPolicy)
