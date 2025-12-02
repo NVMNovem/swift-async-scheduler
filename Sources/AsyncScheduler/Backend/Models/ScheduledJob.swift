@@ -10,6 +10,8 @@ import Foundation
 public struct ScheduledJob {
     
     public let id: UUID
+    public var job: AsyncScheduler.Job { id }
+    
     public let name: String?
     public let schedule: Schedule
     public let action: @Sendable () async throws -> Void

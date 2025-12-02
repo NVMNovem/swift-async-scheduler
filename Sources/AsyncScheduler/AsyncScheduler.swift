@@ -9,33 +9,35 @@ import Foundation
 
 public actor AsyncScheduler {
     
-    public typealias Job = ScheduledJob
+    public typealias Job = ScheduledJob.ID
     
     private let clock: any Clock<Duration>
     
-    private var tasks: [UUID: Task<Void, Never>] = [:]
-    private var jobStates: [UUID: JobState] = [:]
+    private var tasks: [Job : Task<Void, Never>] = [:]
+    private var jobStates: [Job : JobState] = [:]
     
     public init(clock: any Clock<Duration> = .continuous) {
         self.clock = clock
     }
     
     @discardableResult
-    public func schedule(_ job: Job) -> Job.ID {
+    public func schedule(_ scheduledJob: ScheduledJob) -> Job {
         let runner: @Sendable () async -> Void = { [unowned self] in
-            await self.execute(job)
+            await self.execute(scheduledJob)
         }
         
         let task = Task {
             await runner()
         }
         
-        tasks[job.id] = task
-        return job.id
+        let job = scheduledJob.job
+        tasks[job] = task
+        
+        return job
     }
     
-    public func cancel(_ id: UUID) {
-        if let task = tasks.removeValue(forKey: id) {
+    public func cancel(_ job: Job) {
+        if let task = tasks.removeValue(forKey: job) {
             task.cancel()
         }
     }
@@ -50,30 +52,31 @@ public actor AsyncScheduler {
 
 private extension AsyncScheduler {
     
-    func execute(_ job: Job) async {
+    func execute(_ scheduledJob: ScheduledJob) async {
+        let job = scheduledJob.job
         while !Task.isCancelled {
             do {
-                try await clock.sleep(for: job.schedule.sleep)
-                if jobStates[job.id] == .running {
-                    switch job.overrunPolicy {
+                try await clock.sleep(for: scheduledJob.schedule.sleep)
+                if jobStates[job] == .running {
+                    switch scheduledJob.overrunPolicy {
                     case .skip:
                         continue
                     case .wait:
-                        while jobStates[job.id] == .running { try await clock.sleep(for: .milliseconds(10)) }
+                        while jobStates[job] == .running { try await clock.sleep(for: .milliseconds(10)) }
                     case .overlap:
                         break //TODO: allow overlapping runs
                     }
                 }
                 
-                jobStates[job.id] = .running
+                jobStates[job] = .running
                 
                 Task {
-                    defer { jobStates.removeValue(forKey: job.id) }
-                    try await job.action()
+                    defer { jobStates.removeValue(forKey: job) }
+                    try await scheduledJob.action()
                 }
             } catch {
                 //TODO: Create a logger to log the error
-                switch job.errorPolicy {
+                switch scheduledJob.errorPolicy {
                 case .ignore:
                     continue
                 case .stop:
