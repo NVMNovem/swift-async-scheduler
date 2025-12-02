@@ -21,7 +21,9 @@ extension Schedule: Sendable {}
 internal extension Schedule {
     
     var sleep: Duration {
-        kind.sleep
+        get throws {
+            try kind.sleep
+        }
     }
 }
 
