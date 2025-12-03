@@ -11,10 +11,15 @@ public actor AsyncScheduler {
     
     public typealias Job = ScheduledJob.ID
     
-    private var tasks: [Job : Task<Void, Never>] = [:]
-    private var jobStates: [Job : JobState] = [:]
+    private var tasks: [Job : Task<Void, Never>]
+    private var jobStates: [Job : JobState]
+    
+    private var idleContinuation: CheckedContinuation<Void, Never>? = nil
 
-    public init() { }
+    public init() {
+        self.tasks = [:]
+        self.jobStates = [:]
+    }
 
     @discardableResult
     public func schedule(_ scheduledJob: ScheduledJob) -> Job {
@@ -36,6 +41,7 @@ public actor AsyncScheduler {
         if let task = tasks.removeValue(forKey: job) {
             task.cancel()
         }
+        resumeIfIdle()
     }
     
     public func cancelAll() {
@@ -43,47 +49,106 @@ public actor AsyncScheduler {
             task.cancel()
         }
         tasks.removeAll()
+        resumeIfIdle()
+    }
+    
+    public func waitUntilIdle() async {
+        if tasks.isEmpty { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            idleContinuation = continuation
+        }
+    }
+}
+
+public extension AsyncScheduler {
+    
+    /// Runs a scheduler with the provided configuration closure and keeps the process alive
+    /// as long as any scheduled jobs are still active.
+    ///
+    /// - Parameter configure: An optional asynchronous closure that receives an `AsyncScheduler`
+    ///
+    /// - Important: `run()` does not exit until the user cancels all scheduled jobs.
+    ///
+    static func run(_ configure: ((AsyncScheduler) async -> Void)? = nil) async {
+        let scheduler = AsyncScheduler()
+
+        await configure?(scheduler)
+
+        // Suspend until scheduler becomes idle (no active tasks)
+        await scheduler.waitUntilIdle()
     }
 }
 
 private extension AsyncScheduler {
-    
     func execute(_ scheduledJob: ScheduledJob) async {
         let job = scheduledJob.job
-        while !Task.isCancelled {
-            do {
-                try await sleep(for: scheduledJob.schedule.sleep)
 
-                if jobStates[job] == .running {
+        let task: Task = Task { [weak self] in
+            guard let self = self else { return }
+
+            while !Task.isCancelled {
+                try? await self.sleep(for: scheduledJob.schedule.sleep)
+
+                guard !Task.isCancelled else { break }
+
+                if await self.isJobRunning(job) {
                     switch scheduledJob.overrunPolicy {
                     case .skip:
                         continue
                     case .wait:
-                        while jobStates[job] == .running {
-                            try await sleep(for: .milliseconds(10))
+                        while await self.isJobRunning(job) && !Task.isCancelled {
+                            try? await self.sleep(for: .milliseconds(10))
                         }
                     case .overlap:
-                        break //TODO: allow overlapping runs
+                        break //TODO: Allow overlapping executions
                     }
                 }
-                
-                jobStates[job] = .running
-                
-                Task {
-                    defer { jobStates.removeValue(forKey: job) }
-                    try await scheduledJob.action()
-                }
-            } catch {
-                //TODO: Create a logger to log the error
-                switch scheduledJob.errorPolicy {
-                case .ignore:
-                    continue
-                case .stop:
-                    return
-                case .retry(backoff: let backoff):
-                    try? await sleep(for: backoff)
-                }
+
+                await self.markJobRunning(job)
+
+                // Execute the job action inline, not in a detached child Task
+                try? await scheduledJob.action()
+
+                guard !Task.isCancelled else { break }
+
+                await self.markJobFinished(job)
             }
+
+            // Final cleanup in case of cancellation
+            await self.markJobFinished(job)
+        }
+
+        await storeTask(job, task)
+    }
+
+    private func storeTask(_ job: Job, _ task: Task<Void, Never>) async {
+        tasks[job] = task
+    }
+
+    private func isJobRunning(_ job: Job) async -> Bool {
+        jobStates[job] == .running
+    }
+
+    private func markJobRunning(_ job: Job) async {
+        jobStates[job] = .running
+    }
+
+    private func markJobFinished(_ job: Job) async {
+        tasks.removeValue(forKey: job)
+        jobStates.removeValue(forKey: job)
+        resumeIfIdle()
+    }
+
+    private func runJobAction(_ scheduledJob: ScheduledJob) async {
+        let job = scheduledJob.job
+        defer { Task { await markJobFinished(job) } }
+        try? await scheduledJob.action()
+    }
+
+    func resumeIfIdle() {
+        if tasks.isEmpty {
+            idleContinuation?.resume()
+            idleContinuation = nil
         }
     }
 }
