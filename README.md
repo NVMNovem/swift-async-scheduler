@@ -41,8 +41,9 @@ targets: [
 
 Then run `swift build` in your project or open the package in Xcode.
 
-Basic usage
+## Basic usage
 
+#### Repeating job every 5 seconds
 ```swift
 import AsyncScheduler
 
@@ -53,3 +54,22 @@ await scheduler.every(.seconds(5)) {
     // perform async work here
 }
 ```
+
+#### Running process
+```swift
+import AsyncScheduler
+
+AsyncScheduler.run { scheduler in
+    // Schedule a repeating job every 5 seconds
+    let job = await scheduler.every(.seconds(5)) {
+        // perform async work here
+    }
+    if processNeedsToStop {
+        await job.cancel()
+    }
+}
+```
+
+### Imortant
+> [!Note]
+> When canceling jobs, make sure to avoid canceling from inside the `Job` itself.
