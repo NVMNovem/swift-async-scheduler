@@ -7,7 +7,7 @@
 
 import Foundation
 
-public actor AsyncScheduler {
+public actor AsyncScheduler: Sendable {
     
     public typealias Job = ScheduledJob.ID
     
@@ -83,7 +83,7 @@ public extension AsyncScheduler {
     ///
     /// - Important: `run()` does not exit until the user cancels all scheduled jobs.
     ///
-    static func run(_ configure: ((AsyncScheduler) async -> Void)? = nil) async {
+    static func run(_ configure: (@Sendable (AsyncScheduler) async -> Void)? = nil) async {
         let scheduler = AsyncScheduler()
         
         await configure?(scheduler)
@@ -128,7 +128,9 @@ private extension AsyncScheduler {
             
             await self.markJobRunning(job)
             
-            // Execute the job action inline, not in a detached child Task
+            // Execute the job action inline within the actor-executing task. The action is invoked
+            // from actor context (we are inside an actor method) so it can safely access actor-local
+            // resources if it needs to by making further `await` calls.
             try? await scheduledJob.action(job)
             
             guard !Task.isCancelled else { break }
