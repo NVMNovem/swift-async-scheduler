@@ -70,6 +70,6 @@ AsyncScheduler.run { scheduler in
 }
 ```
 
-### Imortant
+### Important
 > [!Note]
 > When canceling jobs, make sure to avoid canceling from inside the `Job` itself.
