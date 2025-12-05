@@ -1,5 +1,5 @@
 //
-//  Kind+Error.swift
+//  ScheduleKind+Error.swift
 //  swift-async-scheduler
 //
 //  Created by Damian Van de Kauter on 02/12/2025.
@@ -7,14 +7,14 @@
 
 import Foundation
 
-public extension Kind {
+public extension Schedule.Kind {
 
     enum Error: Swift.Error, Sendable {
-        case invalidDate(Date?, kind: Kind)
+        case invalidDate(Date?, kind: Schedule.Kind)
     }
 }
 
-extension Kind.Error: LocalizedError {
+extension Schedule.Kind.Error: LocalizedError {
     
     public var errorDescription: String? {
         switch self {
