@@ -20,7 +20,7 @@ func testIntervalJobExecutesMultipleTimes() async throws {
     }
     await scheduler.schedule(scheduledJob)
     
-    try? await Task.sleep(nanoseconds: 150_000_000) // ~0.15s
+    try await Task.sleep(nanoseconds: 150_000_000) // ~0.15s
     await scheduler.cancel(scheduledJob.job)
     
     let count = await counter.get()
