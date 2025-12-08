@@ -9,6 +9,8 @@ import Foundation
 
 public actor AsyncScheduler: Sendable {
     
+    /// A Sendable identifier for a scheduled job.
+    /// Used to reference scheduled jobs when cancelling them.
     public typealias Job = ScheduledJob.ID
     
     private var tasks: [Job : Task<Void, Never>]
@@ -23,17 +25,13 @@ public actor AsyncScheduler: Sendable {
     
     @discardableResult
     public func schedule(_ scheduledJob: ScheduledJob) -> Job {
-        let runner: @Sendable () async -> Void = { [unowned self] in
+        let task = Task {
             await self.execute(scheduledJob)
         }
-        
-        let task = Task {
-            await runner()
-        }
-        
+
         let job = scheduledJob.job
         tasks[job] = task
-        
+
         return job
     }
     
@@ -76,20 +74,22 @@ public actor AsyncScheduler: Sendable {
 
 public extension AsyncScheduler {
     
-    /// Runs a scheduler with the provided configuration closure and keeps the process alive
-    /// as long as any scheduled jobs are still active.
-    ///
-    /// - Parameter configure: An optional asynchronous closure that receives an `AsyncScheduler`
-    ///
-    /// - Important: `run()` does not exit until the user cancels all scheduled jobs.
-    ///
-    static func run(_ configure: (@Sendable (AsyncScheduler) async -> Void)? = nil) async {
-        let scheduler = AsyncScheduler()
+    /// Run a scheduler with a builder that returns one or more `ScheduledJob`s.
+    func run(@ScheduledJobBuilder _ builder: (AsyncScheduler) -> [ScheduledJob]) async {
+        let jobs = builder(self)
         
-        await configure?(scheduler)
+        await withTaskGroup(of: Job.self) { group in
+            
+            for job in jobs {
+                group.addTask {
+                    return await self.schedule(job)
+                }
+            }
+            
+            _ = await group.next()
+        }
         
-        // Suspend until scheduler becomes idle (no active tasks)
-        await scheduler.waitUntilIdle()
+        await self.waitUntilIdle()
     }
 }
 
@@ -128,16 +128,19 @@ private extension AsyncScheduler {
             
             await self.markJobRunning(job)
             
-            // Execute the job action inline within the actor-executing task. The action is invoked
-            // from actor context (we are inside an actor method) so it can safely access actor-local
-            // resources if it needs to by making further `await` calls.
-            try? await scheduledJob.action(job)
+            // Execute the job action outside the actor so a long-running or
+            // awaiting action doesn't block the scheduler's actor executor and
+            // prevent other job loops from making progress.
+            // The action will mark the job finished when it completes.
+            self.runJobAction(scheduledJob)
             
             guard !Task.isCancelled else { break }
             
             if jobStates[job] == .cancelled { break }
             
-            await self.markJobFinished(job)
+            // Note: we no longer call `markJobFinished` inline here because
+            // the detached task running the action is responsible for calling
+            // it when the action completes.
         }
         
         // Final cleanup in case of cancellation
@@ -165,10 +168,13 @@ private extension AsyncScheduler {
         resumeIfIdle()
     }
     
-    private func runJobAction(_ scheduledJob: ScheduledJob) async {
+    // run job action off the actor so the actor isn't blocked
+    private func runJobAction(_ scheduledJob: ScheduledJob) {
         let job = scheduledJob.job
-        defer { Task { await markJobFinished(job) } }
-        try? await scheduledJob.action(job)
+        Task.detached { [scheduledJob] in
+            try? await scheduledJob.action(job)
+            await self.markJobFinished(job)
+        }
     }
     
     func resumeIfIdle() {
