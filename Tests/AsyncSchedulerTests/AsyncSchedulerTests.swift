@@ -11,7 +11,7 @@ actor Box<T> {
 }
 
 @Test
-func testIntervalJobRuns() async throws {
+func testIntervalJobExecutesMultipleTimes() async throws {
     let scheduler = AsyncScheduler()
     let counter = Box(0)
     
@@ -28,7 +28,7 @@ func testIntervalJobRuns() async throws {
 }
 
 @Test
-func testIntervalJobCancels() async throws {
+func testIntervalJobStopsAfterCancellation() async throws {
     let scheduler = AsyncScheduler()
     let counter = Box(0)
     
@@ -48,7 +48,7 @@ func testIntervalJobCancels() async throws {
 }
 
 @Test
-func testDailySchedulesTomorrowIfPassed() async throws {
+func testDailyScheduleSchedulesNextRunTomorrowIfTodayPassed() async throws {
     let scheduler = AsyncScheduler()
     
     // Daily schedule at 00:00 local time
@@ -77,7 +77,7 @@ func testDailySchedulesTomorrowIfPassed() async throws {
 }
 
 @Test
-func testCancelAll() async throws {
+func testCancelAllStopsAllScheduledJobs() async throws {
     let scheduler = AsyncScheduler()
     let a = Box(0)
     let b = Box(0)
@@ -102,7 +102,7 @@ func testCancelAll() async throws {
 }
 
 @Test
-func testRunWaitsUntilIdleCancelAllJobs() async throws {
+func testRunWaitsUntilIdleAfterCancelAll() async throws {
     let counter = Box("")
     
     enum TimeoutError: Error { case timedOut }
@@ -154,7 +154,7 @@ func testRunWaitsUntilIdleCancelAllJobs() async throws {
 }
 
 @Test
-func testRunWaitsUntilIdleCancelJob() async throws {
+func testRunWaitsUntilIdleAfterCancelJob() async throws {
     let counter: Box<[String]> = Box([])
     
     enum TimeoutError: Error { case timedOut }
