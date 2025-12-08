@@ -75,7 +75,7 @@ public actor AsyncScheduler: Sendable {
 public extension AsyncScheduler {
     
     /// Run a scheduler with a builder that returns one or more `ScheduledJob`s.
-    func run(@ScheduledJobBuilder _ builder: (AsyncScheduler) -> [ScheduledJob]) async {
+    func run(@ScheduledJobBuilder _ builder: @Sendable (AsyncScheduler) -> [ScheduledJob]) async {
         let jobs = builder(self)
         
         await withTaskGroup(of: Job.self) { group in
