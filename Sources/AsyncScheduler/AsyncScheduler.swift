@@ -25,17 +25,13 @@ public actor AsyncScheduler: Sendable {
     
     @discardableResult
     public func schedule(_ scheduledJob: ScheduledJob) -> Job {
-        let runner: @Sendable () async -> Void = { [unowned self] in
+        let task = Task {
             await self.execute(scheduledJob)
         }
-        
-        let task = Task {
-            await runner()
-        }
-        
+
         let job = scheduledJob.job
         tasks[job] = task
-        
+
         return job
     }
     
@@ -172,14 +168,12 @@ private extension AsyncScheduler {
         resumeIfIdle()
     }
     
+    // run job action off the actor so the actor isn't blocked
     private func runJobAction(_ scheduledJob: ScheduledJob) {
         let job = scheduledJob.job
-        // Run the action in a child task so it doesn't detach from the scheduler's
-        // task hierarchy. This ensures cancellation of the scheduler/task will
-        // cancel the running action.
-        Task { [scheduledJob] in
-            defer { Task { await self.markJobFinished(job) } }
+        Task.detached { [scheduledJob] in
             try? await scheduledJob.action(job)
+            await self.markJobFinished(job)
         }
     }
     
