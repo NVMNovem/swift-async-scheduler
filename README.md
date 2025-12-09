@@ -54,7 +54,7 @@ let scheduledJob = ScheduledJob.every(.seconds(5)) {
     // perform async work here
 }
 
-scheduler.execute(scheduledJob)
+scheduler.schedule(scheduledJob)
 ```
 
 #### Running process
