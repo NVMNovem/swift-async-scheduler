@@ -50,9 +50,11 @@ import AsyncScheduler
 let scheduler = AsyncScheduler()
 
 // Schedule a repeating job every 5 seconds
-await scheduler.every(.seconds(5)) {
+let scheduledJob = ScheduledJob.every(.seconds(5)) {
     // perform async work here
 }
+
+scheduler.execute(scheduledJob)
 ```
 
 #### Running process
@@ -61,15 +63,21 @@ import AsyncScheduler
 
 AsyncScheduler.run { scheduler in
     // Schedule a repeating job every 5 seconds
-    let job = await scheduler.every(.seconds(5)) {
+    let scheduledJob = ScheduledJob.every(.seconds(5)) {
         // perform async work here
     }
     if processNeedsToStop {
-        await job.cancel()
+        await scheduler.cancel(scheduledJob.job)
+    }
+}
+
+// or
+AsyncScheduler.run { scheduler in
+    // Schedule a repeating job every 5 seconds
+    ScheduledJob.every(.seconds(5)) { scheduledJob in
+        if processNeedsToStop {
+            await scheduler.cancel(scheduledJob.job)
+        }
     }
 }
 ```
-
-### Important
-> [!Note]
-> When canceling jobs, make sure to avoid canceling from inside the `Job` itself.
