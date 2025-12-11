@@ -17,7 +17,6 @@ This Swift package is designed to run on:
 ## Key features
 - Dependency-free: no third-party packages required. Works with the Swift standard library and Swift Concurrency.
 - Easy scheduling API: convenience helpers to schedule repeating and one-off async jobs.
-- Small, focused core: types like `Schedule`, `ScheduledJob`, and policies (e.g. `OverrunPolicy`, `ErrorPolicy`) let you control behavior when jobs overlap or throw.
 
 ## Installation
 
