@@ -39,8 +39,6 @@ targets: [
 ]
 ```
 
-Then run `swift build` in your project or open the package in Xcode.
-
 ## Basic usage
 
 #### Repeating job every 5 seconds
