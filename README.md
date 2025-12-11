@@ -61,7 +61,7 @@ scheduler.schedule(scheduledJob)
 ```swift
 import AsyncScheduler
 
-AsyncScheduler.run { scheduler in
+AsyncScheduler().run { scheduler in
     // Schedule a repeating job every 5 seconds
     let scheduledJob = ScheduledJob.every(.seconds(5)) {
         // perform async work here
@@ -72,7 +72,7 @@ AsyncScheduler.run { scheduler in
 }
 
 // or
-AsyncScheduler.run { scheduler in
+AsyncScheduler().run { scheduler in
     // Schedule a repeating job every 5 seconds
     ScheduledJob.every(.seconds(5)) { scheduledJob in
         if processNeedsToStop {
