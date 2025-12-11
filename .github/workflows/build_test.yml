@@ -1,0 +1,8 @@
+name: Build & Test
+  
+on:
+  push:
+
+jobs:
+  call-workflow:
+    uses: NVMNovem/actions/.github/workflows/ci.yml
