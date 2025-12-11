@@ -5,4 +5,4 @@ on:
 
 jobs:
   call-workflow:
-    uses: NVMNovem/actions/.github/workflows/ci.yml
+    uses: NVMNovem/actions/.github/workflows/ci.yml@v1
