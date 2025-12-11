@@ -40,14 +40,14 @@ targets: [
 
 ## Basic usage
 
-#### Repeating job every 5 seconds
+#### Repeating job every 10 seconds
 ```swift
 import AsyncScheduler
 
 let scheduler = AsyncScheduler()
 
-// Schedule a repeating job every 5 seconds
-let scheduledJob = ScheduledJob.every(.seconds(5)) {
+// Schedule a repeating job every 10 seconds
+let scheduledJob = ScheduledJob.every(.seconds(10)) {
     // perform async work here
 }
 
