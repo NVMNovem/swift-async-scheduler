@@ -203,3 +203,58 @@ func testRunWaitsUntilIdleAfterCancelJob() async throws {
         }
     }
 }
+
+@Test
+func testCronJobExecutesMultipleTimes() async throws {
+    let scheduler = AsyncScheduler()
+    let counter = Box(0)
+
+    let scheduledJob = ScheduledJob.cron("*/1 * * * * *") {
+        await counter.update { $0 += 1 }
+    }
+    await scheduler.schedule(scheduledJob)
+
+    try await Task.sleep(nanoseconds: 2_200_000_000) // ~2.2s
+    await scheduler.cancel(scheduledJob.job)
+
+    let count = await counter.get()
+    #expect(count >= 2, "Counter value: \(count)")
+}
+
+@Test
+func testCronJobExecutesEvery2Seconds() async throws {
+    let scheduler = AsyncScheduler()
+    let counter = Box(0)
+
+    let scheduledJob = ScheduledJob.cron("*/3 * * * * *") {
+        await counter.update { $0 += 1 }
+    }
+    await scheduler.schedule(scheduledJob)
+
+    try await Task.sleep(nanoseconds: 5_200_000_000) // ~5.2s
+    await scheduler.cancel(scheduledJob.job)
+
+    let count = await counter.get()
+    print("count: \(count)")
+    #expect(count == 2, "Counter value: \(count)")
+}
+
+@Test
+func testCronJobStopsAfterCancellation() async throws {
+    let scheduler = AsyncScheduler()
+    let counter = Box(0)
+
+    let scheduledJob = ScheduledJob.cron("*/1 * * * * *") {
+        await counter.update { $0 += 1 }
+    }
+    await scheduler.schedule(scheduledJob)
+
+    try await Task.sleep(nanoseconds: 1_200_000_000)
+    await scheduler.cancel(scheduledJob.job)
+
+    let afterCancel = await counter.get()
+    try await Task.sleep(nanoseconds: 1_200_000_000)
+
+    let finalCount = await counter.get()
+    #expect(finalCount == afterCancel, "Counter value: \(finalCount)")
+}
