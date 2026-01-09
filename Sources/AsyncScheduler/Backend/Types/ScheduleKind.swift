@@ -15,7 +15,7 @@ extension Schedule {
         case daily(hour: Int, minute: Int, timeZone: TimeZone = .current)
         case weekly(dayOfWeek: Int, hour: Int, minute: Int, timeZone: TimeZone = .current)
         case monthly(dayOfMonth: Int, hour: Int, minute: Int, timeZone: TimeZone = .current)
-        case cron(String)
+        case cron(String, timeZone: TimeZone = .current)
     }
 }
 
@@ -47,9 +47,12 @@ internal extension Schedule.Kind {
                 return .seconds(60) // TODO: Implement weekly schedule
             case .monthly(_, _, _, _):
                 return .seconds(60) // TODO: Implement monthly schedule
-            case .cron(let expression):
+            case .cron(let expression, let timeZone):
+                var calendar = Calendar(identifier: .gregorian)
+                calendar.timeZone = timeZone
+                
                 let now = Date()
-                let cron = try CronExpression(expression)
+                let cron = try CronExpression(expression, calendar: calendar)
                 let next = try cron.nextDate(after: now)
                 let interval = next.timeIntervalSince(now)
                 return .seconds(Int(max(0, interval).rounded(.up)))

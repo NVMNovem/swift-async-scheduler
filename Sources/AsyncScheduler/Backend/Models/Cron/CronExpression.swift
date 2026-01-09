@@ -20,7 +20,7 @@ public struct CronExpression {
     
     private let calendar: Calendar
     
-    public init(_ expression: String, calendar: Calendar = Calendar(identifier: .gregorian)) throws {
+    public init(_ expression: String, calendar: Calendar) throws {
         let parts = expression.split { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" }
         let normalized: [Substring]
         if parts.count == 5 {
@@ -38,6 +38,7 @@ public struct CronExpression {
         self.daysOfMonth = try CronField(normalized[3], min: 1, max: 31, map: parseNumber)
         self.months = try CronField(normalized[4], min: 1, max: 12, map: parseMonth)
         self.daysOfWeek = try CronField(normalized[5], min: 1, max: 7, map: parseDayOfWeek)
+        
         self.calendar = calendar
     }
     
