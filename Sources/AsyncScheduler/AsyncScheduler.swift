@@ -7,7 +7,9 @@
 
 import Foundation
 
-public actor AsyncScheduler: Sendable {
+public typealias DefaultAsyncScheduler = AsyncScheduler<ContinuousClock>
+
+public actor AsyncScheduler<C: Clock>: Sendable where C.Duration == Duration {
     
     /// A Sendable identifier for a scheduled job.
     /// Used to reference scheduled jobs when cancelling them.
@@ -20,9 +22,11 @@ public actor AsyncScheduler: Sendable {
     // This prevents late wakeups or execution time from shifting the schedule.
     private var cronNextRunDate: [Job : Date]
     
+    private let clock: C
     private var idleContinuation: CheckedContinuation<Void, Never>? = nil
     
-    public init() {
+    public init(clock: C = ContinuousClock()) {
+        self.clock = clock
         self.tasks = [:]
         self.jobStates = [:]
         self.cronNextRunDate = [:]
@@ -249,8 +253,7 @@ private extension AsyncScheduler {
 fileprivate extension AsyncScheduler {
     
     func sleep(for duration: Duration) async throws {
-        let ns = duration.nanosecondsApprox
-        try await Task.sleep(nanoseconds: ns)
+        try await clock.sleep(for: duration)
     }
 
     /// Sleep until a concrete wall-clock deadline using corrective looping.
@@ -261,8 +264,9 @@ fileprivate extension AsyncScheduler {
 
             let remaining = deadline.timeIntervalSince(now)
             let chunk = min(remaining, 0.25)
-            let ns = UInt64((chunk * 1_000_000_000).rounded(.up))
-            try await Task.sleep(nanoseconds: ns)
+            try await clock.sleep(
+                for: .nanoseconds(Int64(chunk * 1_000_000_000))
+            )
         }
     }
 }
