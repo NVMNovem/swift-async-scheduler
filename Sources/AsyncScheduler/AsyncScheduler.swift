@@ -112,7 +112,17 @@ private extension AsyncScheduler {
             // If the job was cancelled via actor state, stop.
             if jobStates[job] == .cancelled { break }
             
-            try? await self.sleep(for: nextSleepDuration(for: scheduledJob))
+            var cronDue: Date?
+            var cronExpression: CronExpression?
+            if case .cron = scheduledJob.schedule.kind {
+                if let (cron, due) = try? cronDueDate(for: scheduledJob) {
+                    cronExpression = cron
+                    cronDue = due
+                    try? await self.sleepUntil(due)
+                }
+            } else {
+                try? await self.sleep(for: nextSleepDuration(for: scheduledJob))
+            }
             
             guard !Task.isCancelled else { break }
             
@@ -121,6 +131,11 @@ private extension AsyncScheduler {
             if await self.isJobRunning(job) {
                 switch scheduledJob.overrunPolicy {
                 case .skip:
+                    if let cron = cronExpression, let due = cronDue {
+                        if let next = try? cron.nextDate(after: due) {
+                            cronNextRunDate[job] = next
+                        }
+                    }
                     continue
                 case .wait:
                     while await self.isJobRunning(job) && !Task.isCancelled {
@@ -133,6 +148,11 @@ private extension AsyncScheduler {
             
             if jobStates[job] == .cancelled { break }
             
+            if let cron = cronExpression, let due = cronDue {
+                if let next = try? cron.nextDate(after: due) {
+                    cronNextRunDate[job] = next
+                }
+            }
             await self.markJobRunning(job)
             
             // Execute the job action outside the actor so a long-running or
@@ -193,34 +213,30 @@ private extension AsyncScheduler {
         }
     }
     
+    func cronDueDate(for scheduledJob: ScheduledJob) throws -> (CronExpression, Date) {
+        guard case .cron(let expression, let timeZone) = scheduledJob.schedule.kind else {
+            throw NSError(domain: "AsyncScheduler", code: 1)
+        }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+
+        let cron = try CronExpression(expression, calendar: calendar)
+
+        if let existing = cronNextRunDate[scheduledJob.job] {
+            return (cron, existing)
+        }
+
+        let due = try cron.nextDate(after: Date())
+        cronNextRunDate[scheduledJob.job] = due
+        return (cron, due)
+    }
+    
     func nextSleepDuration(for scheduledJob: ScheduledJob) throws -> Duration {
         switch scheduledJob.schedule.kind {
-        case .cron(let expression, let timeZone):
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = timeZone
-
-            let cron = try CronExpression(expression, calendar: calendar)
-
-            // Determine / advance the anchored next run date.
-            let anchoredNext: Date
-            if let existing = cronNextRunDate[scheduledJob.job] {
-                anchoredNext = try cron.nextDate(after: existing)
-            } else {
-                anchoredNext = try cron.nextDate(after: Date())
-            }
-            cronNextRunDate[scheduledJob.job] = anchoredNext
-
-            // If we're already past the anchored time (late wakeup or long execution),
-            // advance until the next date is in the future. This preserves the schedule
-            // without backlogging executions.
-            var next = anchoredNext
-            let now = Date()
-            while next <= now {
-                next = try cron.nextDate(after: next)
-                cronNextRunDate[scheduledJob.job] = next
-            }
-
-            let interval = max(0, next.timeIntervalSince(now))
+        case .cron:
+            let (_, due) = try cronDueDate(for: scheduledJob)
+            let interval = max(0, due.timeIntervalSince(Date()))
             let ns = UInt64((interval * 1_000_000_000).rounded(.up))
             return .nanoseconds(ns)
 
@@ -235,5 +251,18 @@ fileprivate extension AsyncScheduler {
     func sleep(for duration: Duration) async throws {
         let ns = duration.nanosecondsApprox
         try await Task.sleep(nanoseconds: ns)
+    }
+
+    /// Sleep until a concrete wall-clock deadline using corrective looping.
+    func sleepUntil(_ deadline: Date) async throws {
+        while true {
+            let now = Date()
+            if now >= deadline { return }
+
+            let remaining = deadline.timeIntervalSince(now)
+            let chunk = min(remaining, 0.25)
+            let ns = UInt64((chunk * 1_000_000_000).rounded(.up))
+            try await Task.sleep(nanoseconds: ns)
+        }
     }
 }
