@@ -54,8 +54,9 @@ internal extension Schedule.Kind {
                 let now = Date()
                 let cron = try CronExpression(expression, calendar: calendar)
                 let next = try cron.nextDate(after: now)
-                let interval = next.timeIntervalSince(now)
-                return .seconds(Int(max(0, interval).rounded(.up)))
+                let interval = max(0, next.timeIntervalSince(now))
+                let nanos = Int64(interval * 1_000_000_000)
+                return .nanoseconds(nanos)
             }
         }
     }

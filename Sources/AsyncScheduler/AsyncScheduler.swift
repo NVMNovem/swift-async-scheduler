@@ -16,11 +16,16 @@ public actor AsyncScheduler: Sendable {
     private var tasks: [Job : Task<Void, Never>]
     private var jobStates: [Job : JobState]
     
+    // For cron schedules, keep an anchored "next scheduled" date per job.
+    // This prevents late wakeups or execution time from shifting the schedule.
+    private var cronNextRunDate: [Job : Date]
+    
     private var idleContinuation: CheckedContinuation<Void, Never>? = nil
     
     public init() {
         self.tasks = [:]
         self.jobStates = [:]
+        self.cronNextRunDate = [:]
     }
     
     @discardableResult
@@ -43,6 +48,7 @@ public actor AsyncScheduler: Sendable {
             // wait for the task to finish
             _ = await task.value
         }
+        cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
     }
     
@@ -61,6 +67,7 @@ public actor AsyncScheduler: Sendable {
             _ = await task.value
         }
         tasks.removeAll()
+        cronNextRunDate.removeAll()
         resumeIfIdle()
     }
     
@@ -105,7 +112,7 @@ private extension AsyncScheduler {
             // If the job was cancelled via actor state, stop.
             if jobStates[job] == .cancelled { break }
             
-            try? await self.sleep(for: scheduledJob.schedule.sleep)
+            try? await self.sleep(for: nextSleepDuration(for: scheduledJob))
             
             guard !Task.isCancelled else { break }
             
@@ -165,6 +172,7 @@ private extension AsyncScheduler {
     private func removeTaskAndFinish(_ job: Job) async {
         tasks.removeValue(forKey: job)
         jobStates.removeValue(forKey: job)
+        cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
     }
     
@@ -182,6 +190,42 @@ private extension AsyncScheduler {
             print("AsyncScheduler: Scheduler is now idle; resuming waiters.")
             idleContinuation?.resume()
             idleContinuation = nil
+        }
+    }
+    
+    func nextSleepDuration(for scheduledJob: ScheduledJob) throws -> Duration {
+        switch scheduledJob.schedule.kind {
+        case .cron(let expression, let timeZone):
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+
+            let cron = try CronExpression(expression, calendar: calendar)
+
+            // Determine / advance the anchored next run date.
+            let anchoredNext: Date
+            if let existing = cronNextRunDate[scheduledJob.job] {
+                anchoredNext = try cron.nextDate(after: existing)
+            } else {
+                anchoredNext = try cron.nextDate(after: Date())
+            }
+            cronNextRunDate[scheduledJob.job] = anchoredNext
+
+            // If we're already past the anchored time (late wakeup or long execution),
+            // advance until the next date is in the future. This preserves the schedule
+            // without backlogging executions.
+            var next = anchoredNext
+            let now = Date()
+            while next <= now {
+                next = try cron.nextDate(after: next)
+                cronNextRunDate[scheduledJob.job] = next
+            }
+
+            let interval = max(0, next.timeIntervalSince(now))
+            let ns = UInt64((interval * 1_000_000_000).rounded(.up))
+            return .nanoseconds(ns)
+
+        default:
+            return try scheduledJob.schedule.sleep
         }
     }
 }

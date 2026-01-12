@@ -43,7 +43,11 @@ public struct CronExpression {
     }
     
     func nextDate(after date: Date) throws -> Date {
-        guard let start = calendar.date(byAdding: .second, value: 1, to: date)
+        guard let startPlusOne = calendar.date(byAdding: .second, value: 1, to: date)
+        else { throw Schedule.Kind.Error.invalidDate(date, kind: .cron(expression)) }
+        
+        // Make the search start deterministic and avoid carrying nanoseconds forward.
+        guard let start = calendar.date(bySetting: .nanosecond, value: 0, of: startPlusOne)
         else { throw Schedule.Kind.Error.invalidDate(date, kind: .cron(expression)) }
         
         let end = calendar.date(byAdding: .year, value: 10, to: start) ?? start.addingTimeInterval(10 * 365 * 24 * 60 * 60)
@@ -54,7 +58,8 @@ public struct CronExpression {
         let minHour = hours.values[0]
         
         while candidate <= end {
-            var comps = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: candidate)
+            var comps = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second, .nanosecond, .weekday], from: candidate)
+            comps.nanosecond = 0
             guard
                 let year = comps.year,
                 let month = comps.month,
@@ -74,6 +79,7 @@ public struct CronExpression {
                 comps.hour = minHour
                 comps.minute = minMinute
                 comps.second = minSecond
+                comps.nanosecond = 0
                 candidate = calendar.date(from: comps) ?? candidate.addingTimeInterval(60)
                 
                 continue
@@ -90,6 +96,7 @@ public struct CronExpression {
                 nextComps.hour = minHour
                 nextComps.minute = minMinute
                 nextComps.second = minSecond
+                nextComps.nanosecond = 0
                 
                 candidate = calendar.date(from: nextComps) ?? nextDayStart
                 
@@ -101,6 +108,7 @@ public struct CronExpression {
                     comps.hour = nextHour
                     comps.minute = minMinute
                     comps.second = minSecond
+                    comps.nanosecond = 0
                     candidate = calendar.date(from: comps) ?? candidate.addingTimeInterval(60)
                 } else {
                     guard let startOfToday = calendar.date(from: calendar.dateComponents([.year, .month, .day], from: candidate))
@@ -113,6 +121,7 @@ public struct CronExpression {
                     nextComps.hour = minHour
                     nextComps.minute = minMinute
                     nextComps.second = minSecond
+                    nextComps.nanosecond = 0
                     
                     candidate = calendar.date(from: nextComps) ?? nextDayStart
                 }
@@ -124,6 +133,7 @@ public struct CronExpression {
                 if let nextMinute = nextValue(atOrAfter: minute, in: minutes.values) {
                     comps.minute = nextMinute
                     comps.second = minSecond
+                    comps.nanosecond = 0
                     candidate = calendar.date(from: comps) ?? candidate.addingTimeInterval(60)
                 } else {
                     guard let nextHourDate = calendar.date(byAdding: .hour, value: 1, to: candidate)
@@ -131,6 +141,7 @@ public struct CronExpression {
                     var nextComps = calendar.dateComponents([.year, .month, .day, .hour], from: nextHourDate)
                     nextComps.minute = minMinute
                     nextComps.second = minSecond
+                    nextComps.nanosecond = 0
                     candidate = calendar.date(from: nextComps) ?? nextHourDate
                 }
                 
@@ -140,6 +151,7 @@ public struct CronExpression {
             if !seconds.contains(second) {
                 if let nextSecond = nextValue(atOrAfter: second, in: seconds.values) {
                     comps.second = nextSecond
+                    comps.nanosecond = 0
                     candidate = calendar.date(from: comps) ?? candidate.addingTimeInterval(1)
                 } else {
                     guard let nextMinuteDate = calendar.date(byAdding: .minute, value: 1, to: candidate)
@@ -147,13 +159,17 @@ public struct CronExpression {
                     
                     var nextComps = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: nextMinuteDate)
                     nextComps.second = minSecond
+                    nextComps.nanosecond = 0
                     candidate = calendar.date(from: nextComps) ?? nextMinuteDate
                 }
                 
                 continue
             }
             
-            return calendar.date(from: comps) ?? candidate
+            if let exact = calendar.date(from: comps) {
+                return calendar.date(bySetting: .nanosecond, value: 0, of: exact) ?? exact
+            }
+            return candidate
         }
         
         throw Schedule.Kind.Error.invalidDate(date, kind: .cron(expression))
