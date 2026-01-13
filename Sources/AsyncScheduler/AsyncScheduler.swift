@@ -15,7 +15,18 @@ public actor AsyncScheduler: Sendable, Identifiable {
     /// Used to reference scheduled jobs when cancelling them.
     public typealias Job = SchedulerJob.ID
     
-    private var tasks: [Job : Task<Void, Never>]
+    private var tasks: [Job : Task<Void, Never>] {
+        willSet {
+            let removedJobs = Set(tasks.keys).subtracting(Set(newValue.keys))
+            if !removedJobs.isEmpty {
+                if newValue.isEmpty {
+                    print("[AsyncScheduler] All jobs removed; scheduler is now idle.")
+                } else {
+                    print("[AsyncScheduler] Removed jobs: \(removedJobs.map({ $0.uuidString }).joined(separator: ", "))" )
+                }
+            }
+        }
+    }
     private var jobStates: [Job : JobState]
     
     // For cron schedules, keep an anchored "next scheduled" date per job.
@@ -33,15 +44,19 @@ public actor AsyncScheduler: Sendable, Identifiable {
     }
     
     @discardableResult
-    internal func schedule(_ schedulerJob: SchedulerJob) -> Job {
+    private func schedule(_ schedulerJob: SchedulerJob) -> Job {
         let task = Task {
-            await self.execute(schedulerJob)
+            await self.start(schedulerJob)
         }
 
         let job = schedulerJob.job
         tasks[job] = task
 
         return job
+    }
+    
+    public func cancel(_ schedulerJob: SchedulerJob) async {
+        await cancel(schedulerJob.job)
     }
     
     public func cancel(_ job: Job) async {
@@ -95,75 +110,161 @@ public actor AsyncScheduler: Sendable, Identifiable {
 }
 
 public extension AsyncScheduler {
-    
+
+    /// Creates a fresh scheduler instance, builds jobs, schedules them, and suspends until the scheduler is idle.
+    ///
+    /// This is a *convenience method* for one-off execution without needing to manually instantiate an
+    /// `AsyncScheduler`. It is especially useful in tests and short-lived command flows where you want
+    /// a clean scheduler instance and to await completion.
+    ///
+    /// The builder receives the newly created scheduler so you can reference it while constructing jobs.
+    ///
+    /// - Parameter builder: A closure that receives the newly created scheduler and returns the jobs to schedule.
+    /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
+    ///   has become idle.
+    static func execute(
+        @SchedulerJobBuilder _ builder: @Sendable (AsyncScheduler) -> [SchedulerJob]
+    ) async {
+        let scheduler = AsyncScheduler()
+        await scheduler.execute {
+            builder(scheduler)
+        }
+    }
+
     /// Executes the scheduler with jobs provided by the given builder and suspends until all jobs have completed.
     ///
     /// This method constructs one or more `SchedulerJob` instances using the provided builder closure,
-    /// schedules them for execution, and then suspends until the scheduler becomes fully idle, meaning
-    /// all scheduled jobs have finished and no jobs are currently running.
+    /// schedules them for execution, and then suspends until the scheduler becomes fully idle (i.e. all
+    /// scheduled jobs have finished and no jobs are currently running).
     ///
-    /// The builder receives the scheduler instance and returns an array of jobs to schedule.
-    /// Each job is scheduled as a separate asynchronous task. The method then immediately waits
-    /// for all jobs to be scheduled and for the scheduler to reach a quiescent state before returning.
+    /// Each job is scheduled as a separate asynchronous task. After all jobs have been scheduled, this method
+    /// waits for the scheduler to reach a quiescent state before returning.
     ///
-    /// - Parameter builder: A closure that receives the scheduler and returns one or more `SchedulerJob`s.
-    ///
-    /// - Note: This method is `async` and will only return after all jobs scheduled by the builder have completed.
-    ///         It is typically used in contexts where you want to synchronously await the lifecycle of the scheduled jobs,
-    ///         such as in tests or coordinated shutdown flows.
-    func execute(@SchedulerJobBuilder _ builder: @Sendable (AsyncScheduler) -> [SchedulerJob]) async {
-        let jobs = builder(self)
-        
+    /// - Parameter builder: A closure that returns one or more `SchedulerJob`s.
+    /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
+    ///   has become idle.
+    func execute(
+        @SchedulerJobBuilder _ builder: @Sendable () -> [SchedulerJob]
+    ) async {
+        let jobs = builder()
+
         await withTaskGroup(of: Job.self) { group in
-            
             for job in jobs {
                 group.addTask {
-                    return await self.schedule(job)
+                    await self.schedule(job)
                 }
             }
-            
+
+            // Ensure at least one task is awaited so scheduling begins before we wait for idle.
             _ = await group.next()
         }
-        
+
         await self.waitUntilIdle()
     }
-    
+
+    /// Executes the scheduler for a variadic list of jobs and suspends until all jobs have completed.
+    ///
+    /// This is a *convenience method* that forwards to ``execute(_:)`` using a variadic parameter list.
+    ///
+    /// - Parameter schedulerJobs: One or more jobs to schedule.
+    /// - Note: This method returns only after all jobs have completed and the scheduler is idle.
+    func execute(_ schedulerJobs: SchedulerJob...) async {
+        await execute {
+            schedulerJobs
+        }
+    }
+
+    /// Executes the scheduler for an array of jobs and suspends until all jobs have completed.
+    ///
+    /// This is a *convenience method* that forwards to ``execute(_:)`` using an explicit array.
+    ///
+    /// - Parameter schedulerJobs: The jobs to schedule.
+    /// - Note: This method returns only after all jobs have completed and the scheduler is idle.
+    func execute(_ schedulerJobs: [SchedulerJob]) async {
+        await execute {
+            schedulerJobs
+        }
+    }
+
+    /// Creates a fresh scheduler instance and starts running jobs built by the given closure without awaiting completion.
+    ///
+    /// This is a *convenience method* for fire-and-forget usage where you don’t want to manage a scheduler instance.
+    /// It starts an asynchronous task that schedules the jobs and returns immediately.
+    ///
+    /// - Parameter builder: A closure that receives the newly created scheduler and returns the jobs to schedule.
+    /// - Important: This method does not wait for job completion.
+    ///   If you need to await completion, use ``execute(_:)`` instead.
+    static func run(
+        @SchedulerJobBuilder _ builder: @escaping @Sendable (AsyncScheduler) -> [SchedulerJob]
+    ) {
+        let scheduler = AsyncScheduler()
+
+        Task {
+            await scheduler.run {
+                builder(scheduler)
+            }
+        }
+    }
+
     /// Schedules and runs jobs defined by a builder closure as detached asynchronous tasks.
     ///
     /// This method constructs one or more `SchedulerJob` instances using the provided builder closure,
-    /// schedules them for execution, and immediately returns without waiting for their completion.
-    /// The jobs are scheduled and executed in the background using a detached `Task`, which allows
-    /// them to run independently of the caller.
+    /// schedules them for execution, and returns immediately without waiting for their completion.
     ///
-    /// Use this method when you want to fire off jobs and allow them to run asynchronously,
-    /// without blocking the current context or waiting for their results.
+    /// Jobs are scheduled from a detached task, allowing them to run independently of the caller.
     ///
-    /// - Parameter builder: A closure that receives the scheduler and returns an array of `SchedulerJob`s to schedule.
-    ///                      This closure is executed on a background task.
-    ///
-    /// - Note: Scheduled jobs will run according to their individual schedules and will not block the caller.
-    ///         If you need to wait for all jobs to complete before proceeding, consider using `execute(_:)` instead.
-    func run(@SchedulerJobBuilder _ builder: @escaping @Sendable (AsyncScheduler) -> [SchedulerJob]) {
+    /// - Parameter builder: A closure that returns one or more jobs to schedule.
+    /// - Important: This method does not wait for job completion.
+    ///   If you need to await completion, use ``execute(_:)`` instead.
+    func run(
+        @SchedulerJobBuilder _ builder: @escaping @Sendable () -> [SchedulerJob]
+    ) {
         Task.detached {
-            let jobs = builder(self)
-            
+            let jobs = builder()
+
             await withTaskGroup(of: Job.self) { group in
-                
                 for job in jobs {
                     group.addTask {
-                        return await self.schedule(job)
+                        await self.schedule(job)
                     }
                 }
-                
+
+                // Ensure at least one task is awaited so scheduling begins.
                 _ = await group.next()
             }
+        }
+    }
+
+    /// Schedules and runs a variadic list of jobs without awaiting completion.
+    ///
+    /// This is a *convenience method* that forwards to ``run(_:)`` using a variadic parameter list.
+    ///
+    /// - Parameter schedulerJobs: One or more jobs to schedule.
+    /// - Important: This method does not wait for job completion.
+    ///   If you need to await completion, use ``execute(_:)`` instead.
+    func run(_ schedulerJobs: SchedulerJob...) {
+        run {
+            schedulerJobs
+        }
+    }
+
+    /// Schedules and runs an array of jobs without awaiting completion.
+    ///
+    /// This is a *convenience method* that forwards to ``run(_:)`` using an explicit array.
+    ///
+    /// - Parameter schedulerJobs: The jobs to schedule.
+    /// - Important: This method does not wait for job completion.
+    ///   If you need to await completion, use ``execute(_:)`` instead.
+    func run(_ schedulerJobs: [SchedulerJob]) {
+        run {
+            schedulerJobs
         }
     }
 }
 
 private extension AsyncScheduler {
     
-    func execute(_ schedulerJob: SchedulerJob) async {
+    func start(_ schedulerJob: SchedulerJob) async {
         let job = schedulerJob.job
         
         // Run the job loop inline in the Task that called `execute(_:)`.
@@ -327,3 +428,4 @@ fileprivate extension AsyncScheduler {
         }
     }
 }
+

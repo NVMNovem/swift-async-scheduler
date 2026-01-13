@@ -10,43 +10,48 @@ import Foundation
 public struct SchedulerJob {
     
     public let id: UUID
-    private let scheduler: AsyncScheduler
-    
     public var job: AsyncScheduler.Job { id }
     
-    public let name: String?
+    internal let scheduler: AsyncScheduler
+    
     public let schedule: Schedule
     public let action: @Sendable (AsyncScheduler.Job) async throws -> Void
     
-    public var errorPolicy: ErrorPolicy
-    public var overrunPolicy: OverrunPolicy
+    private var _name: String? = nil
+    public private(set) var name: String {
+        get { _name ?? "Job with ID '\(id.uuidString)'" }
+        set { _name = newValue }
+    }
     
-    internal init(
-        _ name: String? = nil,
-        schedule: Schedule,
-        scheduler: AsyncScheduler,
+    public private(set) var errorPolicy: ErrorPolicy
+    public private(set) var overrunPolicy: OverrunPolicy
+    
+    public init(
+        _ scheduler: AsyncScheduler,
+        _ schedule: Schedule,
         action: @escaping @Sendable () async throws -> Void
     ) {
         self.id = UUID()
-        self.name = name
-        self.schedule = schedule
+        
         self.scheduler = scheduler
+        self.schedule = schedule
         self.action = { _ in try await action() }
+        
         self.errorPolicy = .ignore
         self.overrunPolicy = .skip
     }
     
-    internal init(
-        _ name: String? = nil,
-        schedule: Schedule,
-        scheduler: AsyncScheduler,
+    public init(
+        _ scheduler: AsyncScheduler,
+        _ schedule: Schedule,
         action: @escaping @Sendable (AsyncScheduler.Job) async throws -> Void
     ) {
         self.id = UUID()
-        self.name = name
-        self.schedule = schedule
+        
         self.scheduler = scheduler
+        self.schedule = schedule
         self.action = action
+        
         self.errorPolicy = .ignore
         self.overrunPolicy = .skip
     }
@@ -58,12 +63,28 @@ extension SchedulerJob: Identifiable {}
 
 public extension SchedulerJob {
     
-    mutating func errorPolicy(_ errorPolicy: ErrorPolicy) {
-        self.errorPolicy = errorPolicy
+    func named(_ name: String) -> Self {
+        var copy = self
+        copy.name = name
+        return copy
     }
     
-    mutating func overrunPolicy(_ overrunPolicy: OverrunPolicy) {
-        self.overrunPolicy = overrunPolicy
+    func errorPolicy(_ errorPolicy: ErrorPolicy) -> Self {
+        var copy = self
+        copy.errorPolicy = errorPolicy
+        return copy
+    }
+    
+    func overrunPolicy(_ overrunPolicy: OverrunPolicy) -> Self {
+        var copy = self
+        copy.overrunPolicy = overrunPolicy
+        return copy
     }
 }
 
+public extension SchedulerJob {
+    
+    func cancel() async {
+        await scheduler.cancel(self)
+    }
+}
