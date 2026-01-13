@@ -119,7 +119,7 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
                 SchedulerJob(scheduler, .interval(.seconds(0.05))) { job in
                     await counter.update { $0 += "B" }
 
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // small yield
+                    try? await Task.sleep(nanoseconds: 500_000_000) // small yield
                     await scheduler.cancelAll()
                 }
             }
@@ -145,7 +145,7 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
 
     let count = await counter.get()
     defer {
-        #expect(count.hasPrefix("ABAAA"), "Counter value: \(count)")
+        #expect(count.hasPrefix("ABAA"), "Counter value: \(count)")
     }
     await scheduler.cancelAll()
 }

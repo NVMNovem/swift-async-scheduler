@@ -14,10 +14,12 @@ public actor AsyncScheduler: Sendable, Identifiable {
     /// A Sendable identifier for a scheduled job.
     /// Used to reference scheduled jobs when cancelling them.
     public typealias Job = SchedulerJob.ID
-    
-    private var tasks: [Job : Task<Void, Never>] {
+
+    private var jobs: [JobEntry] {
         willSet {
-            let removedJobs = Set(tasks.keys).subtracting(Set(newValue.keys))
+            let currentJobs = Set(jobs.map { $0.schedulerJob.job })
+            let updatedJobs = Set(newValue.map { $0.schedulerJob.job })
+            let removedJobs = currentJobs.subtracting(updatedJobs)
             if !removedJobs.isEmpty {
                 if newValue.isEmpty {
                     print("[AsyncScheduler] All jobs removed; scheduler is now idle.")
@@ -27,7 +29,6 @@ public actor AsyncScheduler: Sendable, Identifiable {
             }
         }
     }
-    internal private(set) var jobStates: [Job : JobState]
     
     // For cron schedules, keep an anchored "next scheduled" date per job.
     // This prevents late wakeups or execution time from shifting the schedule.
@@ -38,8 +39,7 @@ public actor AsyncScheduler: Sendable, Identifiable {
     public init() {
         self.id = UUID()
         
-        self.tasks = [:]
-        self.jobStates = [:]
+        self.jobs = []
         self.cronNextRunDate = [:]
     }
     
@@ -50,7 +50,7 @@ public actor AsyncScheduler: Sendable, Identifiable {
         }
 
         let job = schedulerJob.job
-        tasks[job] = task
+        jobs.append(JobEntry(from: schedulerJob, task: task))
 
         return job
     }
@@ -61,31 +61,33 @@ public actor AsyncScheduler: Sendable, Identifiable {
     
     public func cancel(_ job: Job) async {
         // mark cancelled first so the running loop can observe it
-        jobStates[job] = .cancelled
-        if let task = tasks.removeValue(forKey: job) {
-            task.cancel()
+        if let jobEntry = jobs[job] {
+            jobs[job]?.state = .finished(.cancelled)
+            jobs[job] = nil
+            jobEntry.task.cancel()
             // wait for the task to finish
-            _ = await task.value
+            _ = await jobEntry.task.value
         }
+        
         cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
     }
     
     public func cancelAll() async {
-        // capture current tasks
-        let currentTasks = tasks
+        // capture current jobs
+        let currentEntries = jobs
         // mark all jobs cancelled first
-        for job in currentTasks.keys {
-            jobStates[job] = .cancelled
+        for index in jobs.indices {
+            jobs[index].state = .finished(.cancelled)
         }
-        for task in currentTasks.values {
-            task.cancel()
+        for entry in currentEntries {
+            entry.task.cancel()
         }
         // await their completion
-        for task in currentTasks.values {
-            _ = await task.value
+        for entry in currentEntries {
+            _ = await entry.task.value
         }
-        tasks.removeAll()
+        jobs.removeAll()
         cronNextRunDate.removeAll()
         resumeIfIdle()
     }
@@ -102,10 +104,14 @@ public actor AsyncScheduler: Sendable, Identifiable {
     ///         scheduled jobs. It only waits for jobs that were running or scheduled at the time of the call.
     ///
     public func waitUntilIdle() async {
-        if tasks.isEmpty { return }
+        if jobs.isEmpty { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             idleContinuation = continuation
         }
+    }
+    
+    public func jobState(for job: Job) -> JobState {
+        jobs[job]?.state ?? .idle
     }
 }
 
@@ -144,14 +150,14 @@ public extension AsyncScheduler {
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
     func execute(
-        @SchedulerJobBuilder _ builder: @Sendable () -> [SchedulerJob]
+        @SchedulerJobBuilder _ schedulerJobsBuilder: @Sendable () -> [SchedulerJob]
     ) async {
-        let jobs = builder()
+        let schedulerJobs = schedulerJobsBuilder()
 
         await withTaskGroup(of: Job.self) { group in
-            for job in jobs {
+            for schedulerJob in schedulerJobs {
                 group.addTask {
-                    await self.schedule(job)
+                    await self.schedule(schedulerJob)
                 }
             }
 
@@ -195,13 +201,13 @@ public extension AsyncScheduler {
     /// - Important: This method does not wait for job completion.
     ///   If you need to await completion, use ``execute(_:)`` instead.
     static func run(
-        @SchedulerJobBuilder _ builder: @escaping @Sendable (AsyncScheduler) -> [SchedulerJob]
+        @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (AsyncScheduler) -> [SchedulerJob]
     ) {
         let scheduler = AsyncScheduler()
 
         Task {
             await scheduler.run {
-                builder(scheduler)
+                schedulerJobsBuilder(scheduler)
             }
         }
     }
@@ -217,15 +223,15 @@ public extension AsyncScheduler {
     /// - Important: This method does not wait for job completion.
     ///   If you need to await completion, use ``execute(_:)`` instead.
     func run(
-        @SchedulerJobBuilder _ builder: @escaping @Sendable () -> [SchedulerJob]
+        @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable () -> [SchedulerJob]
     ) {
         Task.detached {
-            let jobs = builder()
+            let schedulerJobs = schedulerJobsBuilder()
 
             await withTaskGroup(of: Job.self) { group in
-                for job in jobs {
+                for schedulerJob in schedulerJobs {
                     group.addTask {
-                        await self.schedule(job)
+                        await self.schedule(schedulerJob)
                     }
                 }
 
@@ -268,11 +274,11 @@ private extension AsyncScheduler {
         let job = schedulerJob.job
         
         // Run the job loop inline in the Task that called `execute(_:)`.
-        // This ensures the Task stored in `tasks` is the actual running task
+        // This ensures the Task stored in `jobs` is the actual running task
         // and that cancelling it via `cancel(_:)` will stop the loop immediately.
         while !Task.isCancelled {
             // If the job was cancelled via actor state, stop.
-            if jobStates[job] == .cancelled { break }
+            if jobState(for: job).isCancelled() { break }
             
             var cronDue: Date?
             var cronExpression: CronExpression?
@@ -288,7 +294,7 @@ private extension AsyncScheduler {
             
             guard !Task.isCancelled else { break }
             
-            if jobStates[job] == .cancelled { break }
+            if jobState(for: job).isCancelled() { break }
             
             if await self.isJobRunning(job) {
                 switch schedulerJob.overrunPolicy {
@@ -308,7 +314,7 @@ private extension AsyncScheduler {
                 }
             }
             
-            if jobStates[job] == .cancelled { break }
+            if jobState(for: job).isCancelled() { break }
             
             if let cron = cronExpression, let due = cronDue {
                 if let next = try? cron.nextDate(after: due) {
@@ -325,7 +331,7 @@ private extension AsyncScheduler {
             
             guard !Task.isCancelled else { break }
             
-            if jobStates[job] == .cancelled { break }
+            if jobState(for: job) == .finished(.cancelled) { break }
             
             // Note: we no longer call `markJobFinished` inline here because
             // the detached task running the action is responsible for calling
@@ -337,23 +343,23 @@ private extension AsyncScheduler {
     }
     
     private func isJobRunning(_ job: Job) async -> Bool {
-        jobStates[job] == .running
+        jobs[job]?.state == .running
     }
     
     private func markJobRunning(_ job: Job) async {
-        jobStates[job] = .running
+        jobs[job]?.state = .running
     }
     
     private func markJobFinished(_ job: Job) async {
         // only clear running state; do not remove the stored Task here because
         // the Task may still be looping and scheduling further runs. Removing
         // the Task while it's still running causes cancel/cancelAll to miss it.
-        jobStates.removeValue(forKey: job)
+        jobs[job]?.state = .idle
     }
     
     private func removeTaskAndFinish(_ job: Job) async {
-        tasks.removeValue(forKey: job)
-        jobStates.removeValue(forKey: job)
+        jobs[job] = nil
+        
         cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
     }
@@ -368,7 +374,7 @@ private extension AsyncScheduler {
     }
     
     func resumeIfIdle() {
-        if tasks.isEmpty {
+        if jobs.isEmpty {
             print("AsyncScheduler: Scheduler is now idle; resuming waiters.")
             idleContinuation?.resume()
             idleContinuation = nil
@@ -428,4 +434,3 @@ fileprivate extension AsyncScheduler {
         }
     }
 }
-

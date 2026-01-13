@@ -28,7 +28,7 @@ public struct SchedulerJob {
     
     public var state: JobState? {
         get async {
-            await scheduler.jobStates[job]
+            await scheduler.jobState(for: job)
         }
     }
     
@@ -94,4 +94,3 @@ public extension SchedulerJob {
         await scheduler.cancel(self)
     }
 }
-
