@@ -1,5 +1,5 @@
 //
-//  ScheduledJob+Convenience.swift
+//  SchedulerJob+Convenience.swift
 //  swift-async-scheduler
 //
 //  Created by Damian Van de Kauter on 01/12/2025.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-public extension ScheduledJob {
+public extension SchedulerJob {
     
     /// - Important: Do not reference job from inside the closure as the job isn't initialized yet.
     /// Instead use the other overload that provides the job as closure parameter.
@@ -18,13 +18,13 @@ public extension ScheduledJob {
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable () async throws -> Void
-    ) -> ScheduledJob {
-        var scheduledJob = ScheduledJob(name, schedule: .interval(interval), action: action)
+    ) -> SchedulerJob {
+        var schedulerJob = SchedulerJob(name, schedule: .interval(interval), action: action)
         
-        scheduledJob.withErrorPolicy(errorPolicy)
-        scheduledJob.overrunPolicy(overrunPolicy)
+        schedulerJob.withErrorPolicy(errorPolicy)
+        schedulerJob.overrunPolicy(overrunPolicy)
         
-        return scheduledJob
+        return schedulerJob
     }
     
     static func every(
@@ -33,17 +33,17 @@ public extension ScheduledJob {
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable (AsyncScheduler.Job) async throws -> Void
-    ) -> ScheduledJob {
-        var scheduledJob = ScheduledJob(name, schedule: .interval(interval), action: action)
+    ) -> SchedulerJob {
+        var schedulerJob = SchedulerJob(name, schedule: .interval(interval), action: action)
         
-        scheduledJob.withErrorPolicy(errorPolicy)
-        scheduledJob.overrunPolicy(overrunPolicy)
+        schedulerJob.withErrorPolicy(errorPolicy)
+        schedulerJob.overrunPolicy(overrunPolicy)
         
-        return scheduledJob
+        return schedulerJob
     }
 }
 
-public extension ScheduledJob {
+public extension SchedulerJob {
     
     /// - Important: Do not reference job from inside the closure as the job isn't initialized yet.
     /// Instead use the other overload that provides the job as closure parameter.
@@ -54,13 +54,13 @@ public extension ScheduledJob {
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable () async throws -> Void
-    ) -> ScheduledJob {
-        var scheduledJob = ScheduledJob(name, schedule: .daily(hour: hour, minute: minute, timeZone: timeZone), action: action)
+    ) -> SchedulerJob {
+        var schedulerJob = SchedulerJob(name, schedule: .daily(hour: hour, minute: minute, timeZone: timeZone), action: action)
         
-        scheduledJob.withErrorPolicy(errorPolicy)
-        scheduledJob.overrunPolicy(overrunPolicy)
+        schedulerJob.withErrorPolicy(errorPolicy)
+        schedulerJob.overrunPolicy(overrunPolicy)
         
-        return scheduledJob
+        return schedulerJob
     }
     
     static func daily(
@@ -69,17 +69,17 @@ public extension ScheduledJob {
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable (AsyncScheduler.Job) async throws -> Void
-    ) -> ScheduledJob {
-        var scheduledJob = ScheduledJob(name, schedule: .daily(hour: hour, minute: minute, timeZone: timeZone), action: action)
+    ) -> SchedulerJob {
+        var schedulerJob = SchedulerJob(name, schedule: .daily(hour: hour, minute: minute, timeZone: timeZone), action: action)
         
-        scheduledJob.withErrorPolicy(errorPolicy)
-        scheduledJob.overrunPolicy(overrunPolicy)
+        schedulerJob.withErrorPolicy(errorPolicy)
+        schedulerJob.overrunPolicy(overrunPolicy)
         
-        return scheduledJob
+        return schedulerJob
     }
 }
 
-public extension ScheduledJob {
+public extension SchedulerJob {
     
     /// - Important: Do not reference job from inside the closure as the job isn't initialized yet.
     /// Instead use the other overload that provides the job as closure parameter.
@@ -90,13 +90,13 @@ public extension ScheduledJob {
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable () async throws -> Void
-    ) -> ScheduledJob {
-        var scheduledJob = ScheduledJob(name, schedule: .cron(expression), action: action)
+    ) -> SchedulerJob {
+        var schedulerJob = SchedulerJob(name, schedule: .cron(expression), action: action)
         
-        scheduledJob.withErrorPolicy(errorPolicy)
-        scheduledJob.overrunPolicy(overrunPolicy)
+        schedulerJob.withErrorPolicy(errorPolicy)
+        schedulerJob.overrunPolicy(overrunPolicy)
         
-        return scheduledJob
+        return schedulerJob
     }
     
     static func cron(
@@ -105,12 +105,12 @@ public extension ScheduledJob {
         errorPolicy: ErrorPolicy = .ignore,
         overrunPolicy: OverrunPolicy = .skip,
         _ action: @escaping @Sendable (AsyncScheduler.Job) async throws -> Void
-    ) -> ScheduledJob {
-        var scheduledJob = ScheduledJob(name, schedule: .cron(expression), action: action)
+    ) -> SchedulerJob {
+        var schedulerJob = SchedulerJob(name, schedule: .cron(expression), action: action)
         
-        scheduledJob.withErrorPolicy(errorPolicy)
-        scheduledJob.overrunPolicy(overrunPolicy)
+        schedulerJob.withErrorPolicy(errorPolicy)
+        schedulerJob.overrunPolicy(overrunPolicy)
         
-        return scheduledJob
+        return schedulerJob
     }
 }

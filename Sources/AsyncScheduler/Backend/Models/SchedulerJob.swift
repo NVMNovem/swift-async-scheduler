@@ -1,5 +1,5 @@
 //
-//  ScheduledJob.swift
+//  SchedulerJob.swift
 //  swift-async-scheduler
 //
 //  Created by Damian Van de Kauter on 01/12/2025.
@@ -7,9 +7,11 @@
 
 import Foundation
 
-public struct ScheduledJob {
+public struct SchedulerJob {
     
     public let id: UUID
+    private let scheduler: AsyncScheduler
+    
     public var job: AsyncScheduler.Job { id }
     
     public let name: String?
@@ -19,40 +21,44 @@ public struct ScheduledJob {
     public var errorPolicy: ErrorPolicy
     public var overrunPolicy: OverrunPolicy
     
-    public init(
+    internal init(
         _ name: String? = nil,
         schedule: Schedule,
+        scheduler: AsyncScheduler,
         action: @escaping @Sendable () async throws -> Void
     ) {
         self.id = UUID()
         self.name = name
         self.schedule = schedule
+        self.scheduler = scheduler
         self.action = { _ in try await action() }
         self.errorPolicy = .ignore
         self.overrunPolicy = .skip
     }
     
-    public init(
+    internal init(
         _ name: String? = nil,
         schedule: Schedule,
+        scheduler: AsyncScheduler,
         action: @escaping @Sendable (AsyncScheduler.Job) async throws -> Void
     ) {
         self.id = UUID()
         self.name = name
         self.schedule = schedule
+        self.scheduler = scheduler
         self.action = action
         self.errorPolicy = .ignore
         self.overrunPolicy = .skip
     }
 }
 
-extension ScheduledJob: Sendable {}
+extension SchedulerJob: Sendable {}
 
-extension ScheduledJob: Identifiable {}
+extension SchedulerJob: Identifiable {}
 
-public extension ScheduledJob {
+public extension SchedulerJob {
     
-    mutating func withErrorPolicy(_ errorPolicy: ErrorPolicy) {
+    mutating func errorPolicy(_ errorPolicy: ErrorPolicy) {
         self.errorPolicy = errorPolicy
     }
     
