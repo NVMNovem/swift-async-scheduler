@@ -27,7 +27,7 @@ public actor AsyncScheduler: Sendable, Identifiable {
             }
         }
     }
-    private var jobStates: [Job : JobState]
+    internal private(set) var jobStates: [Job : JobState]
     
     // For cron schedules, keep an anchored "next scheduled" date per job.
     // This prevents late wakeups or execution time from shifting the schedule.

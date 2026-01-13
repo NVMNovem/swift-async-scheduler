@@ -26,6 +26,12 @@ public struct SchedulerJob {
     public private(set) var errorPolicy: ErrorPolicy
     public private(set) var overrunPolicy: OverrunPolicy
     
+    public var state: JobState? {
+        get async {
+            await scheduler.jobStates[job]
+        }
+    }
+    
     public init(
         _ scheduler: AsyncScheduler,
         _ schedule: Schedule,
@@ -88,3 +94,4 @@ public extension SchedulerJob {
         await scheduler.cancel(self)
     }
 }
+
