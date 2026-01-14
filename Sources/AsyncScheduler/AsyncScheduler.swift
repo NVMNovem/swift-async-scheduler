@@ -37,6 +37,10 @@ public actor Scheduler: AsyncObservable {
     private var cronNextRunDate: [Job : Date]
     
     private var idleContinuation: CheckedContinuation<Void, Never>? = nil
+
+    private func index(of job: Job) -> Int? {
+        jobs.firstIndex(where: { $0.schedulerJob.job == job })
+    }
     
     public init() {
         self.id = UUID()
@@ -62,15 +66,27 @@ public actor Scheduler: AsyncObservable {
     }
     
     public func cancel(_ job: Job) async {
-        // mark cancelled first so the running loop can observe it
-        if let jobEntry = jobs[job] {
-            jobs[job]?.state = .finished(.cancelled)
-            jobs[job] = nil
-            jobEntry.task.cancel()
-            // wait for the task to finish
-            _ = await jobEntry.task.value
+        guard let idx = index(of: job) else {
+            // Ensure cron state is cleaned up even if the task entry is missing.
+            cronNextRunDate.removeValue(forKey: job)
+            resumeIfIdle()
+            return
         }
-        
+
+        // Mark cancelled first so the running loop can observe it.
+        var entry = jobs[idx]
+        entry.state = .finished(.cancelled)
+        jobs[idx] = entry
+
+        // Cancel the actual task.
+        entry.task.cancel()
+
+        // Remove the entry from our list so `waitUntilIdle()` can complete.
+        jobs.remove(at: idx)
+
+        // Wait for the task to finish.
+        _ = await entry.task.value
+
         cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
     }
@@ -113,7 +129,8 @@ public actor Scheduler: AsyncObservable {
     }
     
     public func jobState(for job: Job) -> JobState {
-        jobs[job]?.state ?? .idle
+        guard let idx = index(of: job) else { return .idle }
+        return jobs[idx].state
     }
 }
 
@@ -349,30 +366,32 @@ private extension Scheduler {
     }
     
     private func isJobRunning(_ job: Job) async -> Bool {
-        jobs[job]?.state == .executing
+        guard let idx = index(of: job) else { return false }
+        return jobs[idx].state == .executing
     }
-    
+
     private func markJobRunning(_ job: Job) async {
-        jobs[job]?.state = .running
+        guard let idx = index(of: job) else { return }
+        jobs[idx].state = .running
     }
-    
+
     private func markJobExecuting(_ job: Job) async {
-        jobs[job]?.state = .executing
+        guard let idx = index(of: job) else { return }
+        jobs[idx].state = .executing
     }
-    
+
     private func markJobFinished(_ job: Job) async {
-        // Only clear executing state; do not remove the stored Task here because
-        // the Task may still be looping and scheduling further runs. Removing
-        // the Task while it's still running causes cancel/cancelAll to miss it.
-        guard let entry = jobs[job] else { return }
-        if case .finished = entry.state { return }
-        jobs[job]?.state = .running
+        guard let idx = index(of: job) else { return }
+        if case .finished = jobs[idx].state { return }
+        jobs[idx].state = .running
     }
-    
+
     private func removeTaskAndFinish(_ job: Job) async {
-        jobs[job]?.state = .finished(.cancelled)
-        jobs[job] = nil
-        
+        if let idx = index(of: job) {
+            jobs[idx].state = .finished(.cancelled)
+            jobs.remove(at: idx)
+        }
+
         cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
     }
