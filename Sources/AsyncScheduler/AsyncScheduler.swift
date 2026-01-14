@@ -6,10 +6,13 @@
 //
 
 import Foundation
+import AsyncObserver
 
-public actor Scheduler: Sendable, Identifiable {
+public actor Scheduler: AsyncObservable {
     
     public let id: UUID
+    
+    public var asyncObservers: [AsyncObserver<[JobEntry]>] = []
 
     internal private(set) var jobs: [JobEntry] {
         willSet {
@@ -23,6 +26,9 @@ public actor Scheduler: Sendable, Identifiable {
                     print("[Scheduler] Removed jobs: \(removedJobs.map({ $0.description }).joined(separator: ", "))" )
                 }
             }
+        }
+        didSet {
+            notifyAsyncObservers(jobs)
         }
     }
     
@@ -110,6 +116,10 @@ public actor Scheduler: Sendable, Identifiable {
         jobs[job]?.state ?? .idle
     }
 }
+
+extension Scheduler: Sendable {}
+
+extension Scheduler: Identifiable {}
 
 public extension Scheduler {
 

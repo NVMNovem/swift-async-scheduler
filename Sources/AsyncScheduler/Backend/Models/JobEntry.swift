@@ -5,12 +5,12 @@
 //  Created by Damian Van de Kauter on 13/01/2026.
 //
 
-internal struct JobEntry {
+public struct JobEntry {
     
-    internal let schedulerJob: SchedulerJob
+    public let schedulerJob: SchedulerJob
     
     internal var task: Task<Void, Never>
-    internal var state: JobState
+    public internal(set) var state: JobState
     
     internal init(from schedulerJob: SchedulerJob, task: Task<Void, Never>) {
         self.schedulerJob = schedulerJob
@@ -18,6 +18,8 @@ internal struct JobEntry {
         self.state = .idle
     }
 }
+
+extension JobEntry: Sendable {}
 
 extension Collection where Element == JobEntry {
     
