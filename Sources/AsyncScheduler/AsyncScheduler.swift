@@ -1,5 +1,5 @@
 //
-//  AsyncScheduler.swift
+//  Scheduler.swift
 //  swift-async-scheduler
 //
 //  Created by Damian Van de Kauter on 01/12/2025.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-public actor AsyncScheduler: Sendable, Identifiable {
+public actor Scheduler: Sendable, Identifiable {
     
     public let id: UUID
 
@@ -18,9 +18,9 @@ public actor AsyncScheduler: Sendable, Identifiable {
             let removedJobs = currentJobs.subtracting(updatedJobs)
             if !removedJobs.isEmpty {
                 if newValue.isEmpty {
-                    print("[AsyncScheduler] All jobs removed; scheduler is now idle.")
+                    print("[Scheduler] All jobs removed; scheduler is now idle.")
                 } else {
-                    print("[AsyncScheduler] Removed jobs: \(removedJobs.map({ $0.description }).joined(separator: ", "))" )
+                    print("[Scheduler] Removed jobs: \(removedJobs.map({ $0.description }).joined(separator: ", "))" )
                 }
             }
         }
@@ -111,12 +111,12 @@ public actor AsyncScheduler: Sendable, Identifiable {
     }
 }
 
-public extension AsyncScheduler {
+public extension Scheduler {
 
     /// Creates a fresh scheduler instance, builds jobs, schedules them, and suspends until the scheduler is idle.
     ///
     /// This is a *convenience method* for one-off execution without needing to manually instantiate an
-    /// `AsyncScheduler`. It is especially useful in tests and short-lived command flows where you want
+    /// `Scheduler`. It is especially useful in tests and short-lived command flows where you want
     /// a clean scheduler instance and to await completion.
     ///
     /// The builder receives the newly created scheduler so you can reference it while constructing jobs.
@@ -125,9 +125,9 @@ public extension AsyncScheduler {
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
     static func execute(
-        @SchedulerJobBuilder _ builder: @Sendable (AsyncScheduler) -> [SchedulerJob]
+        @SchedulerJobBuilder _ builder: @Sendable (Scheduler) -> [SchedulerJob]
     ) async {
-        let scheduler = AsyncScheduler()
+        let scheduler = Scheduler()
         await scheduler.execute {
             builder(scheduler)
         }
@@ -197,9 +197,9 @@ public extension AsyncScheduler {
     /// - Important: This method does not wait for job completion.
     ///   If you need to await completion, use ``execute(_:)`` instead.
     static func run(
-        @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (AsyncScheduler) -> [SchedulerJob]
+        @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (Scheduler) -> [SchedulerJob]
     ) {
-        let scheduler = AsyncScheduler()
+        let scheduler = Scheduler()
 
         Task {
             await scheduler.run {
@@ -264,7 +264,7 @@ public extension AsyncScheduler {
     }
 }
 
-private extension AsyncScheduler {
+private extension Scheduler {
     
     func start(_ schedulerJob: SchedulerJob) async {
         let job = schedulerJob.job
@@ -371,7 +371,7 @@ private extension AsyncScheduler {
     
     func resumeIfIdle() {
         if jobs.isEmpty {
-            print("AsyncScheduler: Scheduler is now idle; resuming waiters.")
+            print("Scheduler: Scheduler is now idle; resuming waiters.")
             idleContinuation?.resume()
             idleContinuation = nil
         }
@@ -379,7 +379,7 @@ private extension AsyncScheduler {
     
     func cronDueDate(for schedulerJob: SchedulerJob) throws -> (CronExpression, Date) {
         guard case .cron(let expression, let timeZone) = schedulerJob.schedule.kind else {
-            throw NSError(domain: "AsyncScheduler", code: 1)
+            throw NSError(domain: "Scheduler", code: 1)
         }
 
         var calendar = Calendar(identifier: .gregorian)
@@ -410,7 +410,7 @@ private extension AsyncScheduler {
     }
 }
 
-fileprivate extension AsyncScheduler {
+fileprivate extension Scheduler {
     
     func sleep(for duration: Duration) async throws {
         let ns = duration.nanosecondsApprox

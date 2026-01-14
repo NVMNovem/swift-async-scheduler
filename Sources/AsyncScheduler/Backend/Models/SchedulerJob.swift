@@ -12,7 +12,7 @@ public struct SchedulerJob {
     public let id: UUID
     public var job: Job { Job(id: id) }
     
-    internal let scheduler: AsyncScheduler
+    internal let scheduler: Scheduler
     
     public let schedule: Schedule
     public let action: @Sendable (Job) async throws -> Void
@@ -33,7 +33,7 @@ public struct SchedulerJob {
     }
     
     public init(
-        _ scheduler: AsyncScheduler,
+        _ scheduler: Scheduler,
         _ schedule: Schedule,
         action: @escaping @Sendable () async throws -> Void
     ) {
@@ -48,7 +48,7 @@ public struct SchedulerJob {
     }
     
     public init(
-        _ scheduler: AsyncScheduler,
+        _ scheduler: Scheduler,
         _ schedule: Schedule,
         action: @escaping @Sendable (Job) async throws -> Void
     ) {

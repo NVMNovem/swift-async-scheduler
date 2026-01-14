@@ -44,7 +44,7 @@ targets: [
 ```swift
 import AsyncScheduler
 
-let scheduler = AsyncScheduler()
+let scheduler = Scheduler()
 
 // Schedule a repeating job every 10 seconds
 let schedulerJob = SchedulerJob.every(.seconds(10)) {
@@ -58,7 +58,7 @@ scheduler.schedule(schedulerJob)
 ```swift
 import AsyncScheduler
 
-AsyncScheduler().run { scheduler in
+Scheduler().run { scheduler in
     // Schedule a repeating job every 5 seconds
     let schedulerJob = SchedulerJob.every(.seconds(5)) {
         // perform async work here
@@ -69,7 +69,7 @@ AsyncScheduler().run { scheduler in
 }
 
 // or
-AsyncScheduler().run { scheduler in
+Scheduler().run { scheduler in
     // Schedule a repeating job every 5 seconds
     SchedulerJob.every(.seconds(5)) { schedulerJob in
         if processNeedsToStop {
