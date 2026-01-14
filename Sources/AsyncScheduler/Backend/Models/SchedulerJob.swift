@@ -10,12 +10,12 @@ import Foundation
 public struct SchedulerJob {
     
     public let id: UUID
-    public var job: Job { Job(id: id) }
+    public var job: Scheduler.Job { Scheduler.Job(id: id) }
     
     internal let scheduler: Scheduler
     
     public let schedule: Schedule
-    public let action: @Sendable (Job) async throws -> Void
+    public let action: @Sendable (Scheduler.Job) async throws -> Void
     
     private var _name: String? = nil
     public private(set) var name: String {
@@ -50,7 +50,7 @@ public struct SchedulerJob {
     public init(
         _ scheduler: Scheduler,
         _ schedule: Schedule,
-        action: @escaping @Sendable (Job) async throws -> Void
+        action: @escaping @Sendable (Scheduler.Job) async throws -> Void
     ) {
         self.id = UUID()
         

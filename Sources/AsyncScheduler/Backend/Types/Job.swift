@@ -7,31 +7,34 @@
 
 import Foundation
 
-public struct Job: ExpressibleByStringLiteral {
+extension Scheduler {
     
-    public let id: SchedulerJob.ID
-    
-    public init(stringLiteral value: String) {
-        self.id = UUID(uuidString: value) ?? UUID()
-    }
-    
-    public init(id: SchedulerJob.ID) {
-        self.id = id
-    }
-    
-    public init?(name: String, scheduler: Scheduler) async {
-        guard let jobEntry = await scheduler.jobs.first(where: { $0.schedulerJob.name == name })
-        else { return nil }
+    public struct Job: ExpressibleByStringLiteral {
         
-        self.id = jobEntry.schedulerJob.id
+        public let id: SchedulerJob.ID
+        
+        public init(stringLiteral value: String) {
+            self.id = UUID(uuidString: value) ?? UUID()
+        }
+        
+        public init(id: SchedulerJob.ID) {
+            self.id = id
+        }
+        
+        public init?(name: String, scheduler: Scheduler) async {
+            guard let jobEntry = await scheduler.jobs.first(where: { $0.schedulerJob.name == name })
+            else { return nil }
+            
+            self.id = jobEntry.schedulerJob.id
+        }
     }
 }
 
-extension Job: Sendable {}
+extension Scheduler.Job: Sendable {}
 
-extension Job: Equatable, Hashable, Identifiable {}
+extension Scheduler.Job: Equatable, Hashable, Identifiable {}
 
-extension Job: CustomStringConvertible {
+extension Scheduler.Job: CustomStringConvertible {
     
     public var description: String {
         id.uuidString

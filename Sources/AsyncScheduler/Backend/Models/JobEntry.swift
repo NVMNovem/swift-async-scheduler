@@ -21,7 +21,7 @@ internal struct JobEntry {
 
 extension Collection where Element == JobEntry {
     
-    internal subscript(job: Job) -> JobEntry? {
+    internal subscript(job: Scheduler.Job) -> JobEntry? {
         get {
             first { $0.schedulerJob.job == job }
         }
