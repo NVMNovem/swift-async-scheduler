@@ -10,12 +10,8 @@ import Foundation
 public actor AsyncScheduler: Sendable, Identifiable {
     
     public let id: UUID
-    
-    /// A Sendable identifier for a scheduled job.
-    /// Used to reference scheduled jobs when cancelling them.
-    public typealias Job = SchedulerJob.ID
 
-    private var jobs: [JobEntry] {
+    internal private(set) var jobs: [JobEntry] {
         willSet {
             let currentJobs = Set(jobs.map { $0.schedulerJob.job })
             let updatedJobs = Set(newValue.map { $0.schedulerJob.job })
@@ -24,7 +20,7 @@ public actor AsyncScheduler: Sendable, Identifiable {
                 if newValue.isEmpty {
                     print("[AsyncScheduler] All jobs removed; scheduler is now idle.")
                 } else {
-                    print("[AsyncScheduler] Removed jobs: \(removedJobs.map({ $0.uuidString }).joined(separator: ", "))" )
+                    print("[AsyncScheduler] Removed jobs: \(removedJobs.map({ $0.description }).joined(separator: ", "))" )
                 }
             }
         }
