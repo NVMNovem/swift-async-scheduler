@@ -29,4 +29,4 @@ public struct AsyncObserver<Observable> {
     }
 }
 
-extension AsyncObserver: Sendable
+extension AsyncObserver: Sendable {}
