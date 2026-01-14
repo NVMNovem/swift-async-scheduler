@@ -21,22 +21,25 @@ public struct JobEntry {
 
 extension JobEntry: Sendable {}
 
-extension Collection where Element == JobEntry {
-    
+extension Array where Element == JobEntry {
+
+    /// Convenience accessor for reading/updating/removing a `JobEntry` by `Job`.
+    ///
+    /// - Setting a non-nil value updates an existing entry (if present) or appends a new one.
+    /// - Setting `nil` removes the entry (if present).
     internal subscript(job: Job) -> JobEntry? {
         get {
             first { $0.schedulerJob.job == job }
         }
         set {
-            var entries = Array(self)
-            if let index = entries.firstIndex(where: { $0.schedulerJob.job == job }) {
+            if let index = firstIndex(where: { $0.schedulerJob.job == job }) {
                 if let newValue {
-                    entries[index] = newValue
+                    self[index] = newValue
                 } else {
-                    entries.remove(at: index)
+                    self.remove(at: index)
                 }
             } else if let newValue {
-                entries.append(newValue)
+                self.append(newValue)
             }
         }
     }
