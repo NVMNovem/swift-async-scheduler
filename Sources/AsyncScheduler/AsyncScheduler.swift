@@ -327,7 +327,7 @@ private extension Scheduler {
                     cronNextRunDate[job] = next
                 }
             }
-            await self.markJobRunning(job)
+            await self.markJobExecuting(job)
             
             // Execute the job action outside the actor so a long-running or
             // awaiting action doesn't block the scheduler's actor executor and
@@ -349,21 +349,28 @@ private extension Scheduler {
     }
     
     private func isJobRunning(_ job: Job) async -> Bool {
-        jobs[job]?.state == .running
+        jobs[job]?.state == .executing
     }
     
     private func markJobRunning(_ job: Job) async {
         jobs[job]?.state = .running
     }
     
+    private func markJobExecuting(_ job: Job) async {
+        jobs[job]?.state = .executing
+    }
+    
     private func markJobFinished(_ job: Job) async {
-        // only clear running state; do not remove the stored Task here because
+        // Only clear executing state; do not remove the stored Task here because
         // the Task may still be looping and scheduling further runs. Removing
         // the Task while it's still running causes cancel/cancelAll to miss it.
-        jobs[job]?.state = .idle
+        guard let entry = jobs[job] else { return }
+        if case .finished = entry.state { return }
+        jobs[job]?.state = .running
     }
     
     private func removeTaskAndFinish(_ job: Job) async {
+        jobs[job]?.state = .finished(.cancelled)
         jobs[job] = nil
         
         cronNextRunDate.removeValue(forKey: job)

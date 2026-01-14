@@ -15,7 +15,7 @@ public struct JobEntry {
     internal init(from schedulerJob: SchedulerJob, task: Task<Void, Never>) {
         self.schedulerJob = schedulerJob
         self.task = task
-        self.state = .idle
+        self.state = .running
     }
 }
 
