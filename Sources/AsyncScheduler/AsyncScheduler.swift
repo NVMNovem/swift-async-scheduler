@@ -278,6 +278,36 @@ public extension Scheduler {
     }
 }
 
+// MARK: - Pausing Jobs
+public extension Scheduler {
+
+    func pause(_ job: Job) {
+        guard let jobIndex = index(of: job) else { return }
+        if case .finished = jobs[jobIndex].state { return }
+        if jobs[jobIndex].state == .paused { return }
+        jobs[jobIndex].state = .paused
+    }
+    
+    func pause(_ schedulerJob: SchedulerJob) {
+        pause(schedulerJob.job)
+    }
+}
+
+// MARK: - Resuming Jobs
+public extension Scheduler {
+
+    func resume(_ job: Job) {
+        guard let jobIndex = index(of: job) else { return }
+        if jobs[jobIndex].state == .paused {
+            jobs[jobIndex].state = .running
+        }
+    }
+    
+    func resume(_ schedulerJob: SchedulerJob) {
+        resume(schedulerJob.job)
+    }
+}
+
 private extension Scheduler {
     
     @discardableResult
@@ -301,6 +331,10 @@ private extension Scheduler {
         while !Task.isCancelled {
             // If the job was cancelled via actor state, stop.
             if jobState(for: job).isCancelled() { break }
+            if jobState(for: job) == .paused {
+                await waitWhilePaused(job)
+                continue
+            }
             
             var cronDue: Date?
             var cronExpression: CronExpression?
@@ -317,6 +351,10 @@ private extension Scheduler {
             guard !Task.isCancelled else { break }
             
             if jobState(for: job).isCancelled() { break }
+            if jobState(for: job) == .paused {
+                await waitWhilePaused(job)
+                continue
+            }
             
             if self.isJobRunning(job) {
                 switch schedulerJob.overrunPolicy {
@@ -413,6 +451,7 @@ private extension Scheduler {
     func markJobFinished(_ job: Job) {
         guard let idx = index(of: job) else { return }
         if case .finished = jobs[idx].state { return }
+        if jobs[idx].state == .paused { return }
         jobs[idx].state = .running
     }
 
@@ -463,6 +502,12 @@ private extension Scheduler {
 
         default:
             return try schedulerJob.schedule.sleep
+        }
+    }
+    
+    func waitWhilePaused(_ job: Job) async {
+        while jobState(for: job) == .paused && !Task.isCancelled {
+            try? await sleep(for: .milliseconds(10))
         }
     }
 }
