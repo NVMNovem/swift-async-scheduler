@@ -112,7 +112,7 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
     await withThrowingTaskGroup(of: Void.self) { group in
         // Task A: run the scheduler normally
         group.addTask {
-            await scheduler.execute {
+            await scheduler.runAndWait {
                 SchedulerJob(scheduler, .interval(.seconds(0.03))) { job in
                     await counter.update { $0 += "A" }
                 }
@@ -163,7 +163,7 @@ func testRunWaitsUntilIdleAfterCancelJob() async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             // Task A: run the scheduler normally
             group.addTask {
-                await scheduler.execute {
+                await scheduler.runAndWait {
                     SchedulerJob(scheduler, .interval(.seconds(0.05))) { job in
                         await counter.update { $0.append("A") }
                     }

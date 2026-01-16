@@ -382,7 +382,7 @@ private extension Scheduler {
                 }
             }
             
-            self.run(schedulerJob)
+            self.execute(schedulerJob)
             
             guard !Task.isCancelled else { break }
             
