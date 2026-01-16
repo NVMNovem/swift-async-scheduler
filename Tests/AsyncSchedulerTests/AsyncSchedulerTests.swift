@@ -12,16 +12,16 @@ actor Box<T> {
 
 @Test
 func testIntervalJobExecutesMultipleTimes() async throws {
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
     let counter = Box(0)
 
-    let scheduledJob = ScheduledJob.every(.seconds(0.05)) {
+    let schedulerJob = SchedulerJob(scheduler, .interval(.seconds(0.05))) {
         await counter.update { $0 += 1 }
     }
-    await scheduler.schedule(scheduledJob)
+    await scheduler.run(schedulerJob)
 
     try await Task.sleep(nanoseconds: 150_000_000) // ~0.15s
-    await scheduler.cancel(scheduledJob.job)
+    await scheduler.cancel(schedulerJob.job)
 
     let count = await counter.get()
     #expect(count > 1, "Counter value: \(count)")
@@ -29,16 +29,16 @@ func testIntervalJobExecutesMultipleTimes() async throws {
 
 @Test
 func testIntervalJobStopsAfterCancellation() async throws {
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
     let counter = Box(0)
 
-    let scheduledJob = ScheduledJob.every(.nanoseconds(50_000_000)) {
+    let schedulerJob = SchedulerJob(scheduler, .interval(.nanoseconds(50_000_000))) {
         await counter.update { $0 += 1 }
     }
-    await scheduler.schedule(scheduledJob)
+    await scheduler.run(schedulerJob)
 
     try? await Task.sleep(nanoseconds: 120_000_000)
-    await scheduler.cancel(scheduledJob.job)
+    await scheduler.cancel(schedulerJob.job)
 
     let afterCancel = await counter.get()
     try? await Task.sleep(nanoseconds: 200_000_000)
@@ -49,7 +49,7 @@ func testIntervalJobStopsAfterCancellation() async throws {
 
 @Test
 func testDailyScheduleSchedulesNextRunTomorrowIfTodayPassed() async throws {
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
 
     // Daily schedule at 00:00 local time
     // We force next run to be > 0 seconds (tomorrow)
@@ -60,9 +60,9 @@ func testDailyScheduleSchedulesNextRunTomorrowIfTodayPassed() async throws {
     let hour = max(0, comps.hour! - 1) // ensure the scheduled time for today is already passed
     let minute = comps.minute!
 
-    let scheduledJob = ScheduledJob.daily(on: hour, minute, timeZone: .current) { }
+    let schedulerJob = SchedulerJob(scheduler, .daily(hour: hour, minute: minute)) { }
 
-    await scheduler.schedule(scheduledJob)
+    await scheduler.run(schedulerJob)
 
     // Extract the sleep duration using the internal API if available,
     // but here we validate indirectly by checking that job's loop starts and waits.
@@ -71,22 +71,21 @@ func testDailyScheduleSchedulesNextRunTomorrowIfTodayPassed() async throws {
 
     // If it didn't crash, and didn't immediately run the action,
     // we consider this correct (since we cannot check exact date math here).
-    await scheduler.cancel(scheduledJob.job)
+    await scheduler.cancel(schedulerJob.job)
 
     #expect(true)
 }
 
 @Test
-func testCancelAllStopsAllScheduledJobs() async throws {
-    let scheduler = AsyncScheduler()
+func testCancelAllStopsAllSchedulerJobs() async throws {
+    let scheduler = Scheduler()
     let a = Box(0)
     let b = Box(0)
 
-    let scheduledJobA = ScheduledJob.every(.seconds(0.05)) { await a.update { $0 += 1 } }
-    let scheduledJobB = ScheduledJob.every(.seconds(0.05)) { await b.update { $0 += 1 } }
+    let schedulerJobA = SchedulerJob(scheduler, .interval(.seconds(0.05))) { await a.update { $0 += 1 } }
+    let schedulerJobB = SchedulerJob(scheduler, .interval(.seconds(0.05))) { await b.update { $0 += 1 } }
 
-    await scheduler.schedule(scheduledJobA)
-    await scheduler.schedule(scheduledJobB)
+    await scheduler.run(schedulerJobA, schedulerJobB)
 
     try? await Task.sleep(nanoseconds: 120_000_000)
 
@@ -108,21 +107,19 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
     enum TimeoutError: Error { case timedOut }
     let timeoutNs: UInt64 = 2_000_000_000 // 2s timeout to avoid hanging forever
 
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
 
     await withThrowingTaskGroup(of: Void.self) { group in
         // Task A: run the scheduler normally
         group.addTask {
-            await scheduler.run { scheduler in
-
-                ScheduledJob.every(.seconds(0.03)) { job in
+            await scheduler.execute {
+                SchedulerJob(scheduler, .interval(.seconds(0.03))) { job in
                     await counter.update { $0 += "A" }
                 }
-
-                ScheduledJob.every(.seconds(0.05)) { job in
+                SchedulerJob(scheduler, .interval(.seconds(0.05))) { job in
                     await counter.update { $0 += "B" }
 
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // small yield
+                    try? await Task.sleep(nanoseconds: 500_000_000) // small yield
                     await scheduler.cancelAll()
                 }
             }
@@ -140,7 +137,7 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
             group.cancelAll()
         } catch {
             defer {
-                #expect(Bool(false), "AsyncScheduler.run did not finish within timeout: \(error)")
+                #expect(Bool(false), "Scheduler.run did not finish within timeout: \(error)")
             }
             await scheduler.cancelAll()
         }
@@ -148,7 +145,7 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
 
     let count = await counter.get()
     defer {
-        #expect(count.hasPrefix("ABAAA"), "Counter value: \(count)")
+        #expect(count.hasPrefix("ABAA"), "Counter value: \(count)")
     }
     await scheduler.cancelAll()
 }
@@ -160,19 +157,17 @@ func testRunWaitsUntilIdleAfterCancelJob() async throws {
     enum TimeoutError: Error { case timedOut }
     let timeoutNs: UInt64 = 2_000_000_000 // 2s timeout to avoid hanging forever
 
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
 
     await #expect(throws: TimeoutError.timedOut) {
         try await withThrowingTaskGroup(of: Void.self) { group in
             // Task A: run the scheduler normally
             group.addTask {
-                await scheduler.run { scheduler in
-
-                    ScheduledJob.every(.seconds(0.05)) { job in
+                await scheduler.execute {
+                    SchedulerJob(scheduler, .interval(.seconds(0.05))) { job in
                         await counter.update { $0.append("A") }
                     }
-
-                    ScheduledJob.every(.seconds(0.05)) { job in
+                    SchedulerJob(scheduler, .interval(.seconds(0.05))) { job in
                         await counter.update { $0.append("B") }
 
                         Task {
@@ -206,18 +201,19 @@ func testRunWaitsUntilIdleAfterCancelJob() async throws {
 
 @Test
 func testCronJobExecutesMultipleTimes() async throws {
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
     let counter = Box(0)
 
-    let scheduledJob = ScheduledJob.cron("*/1 * * * * *") {
-        await counter.update { $0 += 1 }
+    await scheduler.run {
+        SchedulerJob(scheduler, .cron("*/1 * * * * *")) {
+            await counter.update { $0 += 1 }
+        }
     }
-    await scheduler.schedule(scheduledJob)
 
     // Cron aligns to wall-clock second boundaries, so depending on where we start within
     // the second, a ~2.2s window can sometimes capture only 1 execution. Give it more room.
     try await Task.sleep(nanoseconds: 3_200_000_000) // ~3.2s
-    await scheduler.cancel(scheduledJob.job)
+    await scheduler.cancelAll()
 
     let count = await counter.get()
     #expect(count >= 2, "Counter value: \(count)")
@@ -225,18 +221,20 @@ func testCronJobExecutesMultipleTimes() async throws {
 
 @Test
 func testCronJobExecutesEvery2Seconds() async throws {
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
     let counter = Box(0)
 
-    let scheduledJob = ScheduledJob.cron("*/3 * * * * *") {
+    let schedulerJob = SchedulerJob(scheduler, .cron("*/3 * * * * *")) {
         await counter.update { $0 += 1 }
     }
-    await scheduler.schedule(scheduledJob)
+    .named("CronJob")
+    
+    await scheduler.run(schedulerJob)
 
     // Depending on where we start relative to the 3-second boundary, the exact count is not
     // deterministic in a fixed time window. Ensure we get at least 2 executions.
     try await Task.sleep(nanoseconds: 7_200_000_000) // ~7.2s
-    await scheduler.cancel(scheduledJob.job)
+    await schedulerJob.cancel()
 
     let count = await counter.get()
     #expect(count >= 2, "Counter value: \(count)")
@@ -244,16 +242,17 @@ func testCronJobExecutesEvery2Seconds() async throws {
 
 @Test
 func testCronJobStopsAfterCancellation() async throws {
-    let scheduler = AsyncScheduler()
+    let scheduler = Scheduler()
     let counter = Box(0)
 
-    let scheduledJob = ScheduledJob.cron("*/1 * * * * *") {
+    let schedulerJob = SchedulerJob(scheduler, .cron("*/1 * * * * *")) {
         await counter.update { $0 += 1 }
     }
-    await scheduler.schedule(scheduledJob)
+    
+    await scheduler.run(schedulerJob)
 
     try await Task.sleep(nanoseconds: 1_200_000_000)
-    await scheduler.cancel(scheduledJob.job)
+    await scheduler.cancel(schedulerJob.job)
 
     let afterCancel = await counter.get()
     try await Task.sleep(nanoseconds: 1_200_000_000)

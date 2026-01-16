@@ -29,6 +29,10 @@ internal extension Schedule {
 
 extension Schedule {
     
+    public static func kind(_ kind: Kind) -> Schedule {
+        Schedule(kind)
+    }
+    
     public static func interval(_ duration: Duration) -> Schedule {
         Schedule(.interval(duration))
     }
@@ -37,7 +41,7 @@ extension Schedule {
         Schedule(.daily(hour: hour, minute: minute, timeZone: timeZone))
     }
     
-    public static func cron(_ expression: String) -> Schedule {
-        Schedule(.cron(expression))
+    public static func cron(_ expression: String, timeZone: TimeZone = .current) -> Schedule {
+        Schedule(.cron(expression, timeZone: timeZone))
     }
 }

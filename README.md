@@ -44,36 +44,36 @@ targets: [
 ```swift
 import AsyncScheduler
 
-let scheduler = AsyncScheduler()
+let scheduler = Scheduler()
 
 // Schedule a repeating job every 10 seconds
-let scheduledJob = ScheduledJob.every(.seconds(10)) {
+let schedulerJob = SchedulerJob.every(.seconds(10)) {
     // perform async work here
 }
 
-scheduler.schedule(scheduledJob)
+scheduler.schedule(schedulerJob)
 ```
 
 #### Running process
 ```swift
 import AsyncScheduler
 
-AsyncScheduler().run { scheduler in
+Scheduler().run { scheduler in
     // Schedule a repeating job every 5 seconds
-    let scheduledJob = ScheduledJob.every(.seconds(5)) {
+    let schedulerJob = SchedulerJob.every(.seconds(5)) {
         // perform async work here
     }
     if processNeedsToStop {
-        await scheduler.cancel(scheduledJob.job)
+        await scheduler.cancel(schedulerJob.job)
     }
 }
 
 // or
-AsyncScheduler().run { scheduler in
+Scheduler().run { scheduler in
     // Schedule a repeating job every 5 seconds
-    ScheduledJob.every(.seconds(5)) { scheduledJob in
+    SchedulerJob.every(.seconds(5)) { schedulerJob in
         if processNeedsToStop {
-            await scheduler.cancel(scheduledJob.job)
+            await scheduler.cancel(schedulerJob.job)
         }
     }
 }
