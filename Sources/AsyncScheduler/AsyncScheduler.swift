@@ -52,7 +52,7 @@ public actor Scheduler: AsyncObservable {
     @discardableResult
     private func schedule(_ schedulerJob: SchedulerJob) -> Job {
         let task = Task {
-            await self.start(schedulerJob)
+            await self.execute(schedulerJob)
         }
 
         let job = schedulerJob.job
@@ -61,76 +61,9 @@ public actor Scheduler: AsyncObservable {
         return job
     }
     
-    public func cancel(_ schedulerJob: SchedulerJob) async {
-        await cancel(schedulerJob.job)
-    }
-    
-    public func cancel(_ job: Job) async {
-        guard let idx = index(of: job) else {
-            // Ensure cron state is cleaned up even if the task entry is missing.
-            cronNextRunDate.removeValue(forKey: job)
-            resumeIfIdle()
-            return
-        }
-
-        // Mark cancelled first so the running loop can observe it.
-        var entry = jobs[idx]
-        entry.state = .finished(.cancelled)
-        jobs[idx] = entry
-
-        // Cancel the actual task.
-        entry.task.cancel()
-
-        // Remove the entry from our list so `waitUntilIdle()` can complete.
-        jobs.remove(at: idx)
-
-        // Wait for the task to finish.
-        _ = await entry.task.value
-
-        cronNextRunDate.removeValue(forKey: job)
-        resumeIfIdle()
-    }
-    
-    public func cancelAll() async {
-        // capture current jobs
-        let currentEntries = jobs
-        // mark all jobs cancelled first
-        for index in jobs.indices {
-            jobs[index].state = .finished(.cancelled)
-        }
-        for entry in currentEntries {
-            entry.task.cancel()
-        }
-        // await their completion
-        for entry in currentEntries {
-            _ = await entry.task.value
-        }
-        jobs.removeAll()
-        cronNextRunDate.removeAll()
-        resumeIfIdle()
-    }
-    
-    /// Suspends the current task until all scheduled jobs have completed and the scheduler becomes idle.
-    ///
-    /// This method returns immediately if there are no running or scheduled jobs.
-    /// Otherwise, it suspends the caller using a checked continuation and resumes only when all active jobs
-    /// have finished executing and the internal scheduler state is idle.
-    ///
-    /// Use this to await for complete quiescence of the scheduler, for example when shutting down or testing.
-    ///
-    /// - Note: If a job is added after calling `waitUntilIdle()`, this method does not wait for newly
-    ///         scheduled jobs. It only waits for jobs that were running or scheduled at the time of the call.
-    ///
-    public func waitUntilIdle() async {
-        if jobs.isEmpty { return }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            idleContinuation = continuation
-        }
-    }
-    
     public func jobState(for job: Job) -> JobState {
-        guard let idx = index(of: job) else { return .idle }
-        return jobs[idx].state
+        guard let jobIndex = index(of: job) else { return .idle }
+        return jobs[jobIndex].state
     }
 }
 
@@ -138,6 +71,7 @@ extension Scheduler: Sendable {}
 
 extension Scheduler: Identifiable {}
 
+// MARK: - Scheduling Jobs
 public extension Scheduler {
 
     /// Creates a fresh scheduler instance, builds jobs, schedules them, and suspends until the scheduler is idle.
@@ -151,11 +85,11 @@ public extension Scheduler {
     /// - Parameter builder: A closure that receives the newly created scheduler and returns the jobs to schedule.
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
-    static func execute(
+    static func scheduleAndWait(
         @SchedulerJobBuilder _ builder: @Sendable (Scheduler) -> [SchedulerJob]
     ) async {
         let scheduler = Scheduler()
-        await scheduler.execute {
+        await scheduler.scheduleAndWait {
             builder(scheduler)
         }
     }
@@ -172,7 +106,7 @@ public extension Scheduler {
     /// - Parameter builder: A closure that returns one or more `SchedulerJob`s.
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
-    func execute(
+    func scheduleAndWait(
         @SchedulerJobBuilder _ schedulerJobsBuilder: @Sendable () -> [SchedulerJob]
     ) async {
         let schedulerJobs = schedulerJobsBuilder()
@@ -193,45 +127,43 @@ public extension Scheduler {
 
     /// Executes the scheduler for a variadic list of jobs and suspends until all jobs have completed.
     ///
-    /// This is a *convenience method* that forwards to ``execute(_:)`` using a variadic parameter list.
+    /// This is a *convenience method* that forwards to ``scheduleAndWait(_:)`` using a variadic parameter list.
     ///
     /// - Parameter schedulerJobs: One or more jobs to schedule.
     /// - Note: This method returns only after all jobs have completed and the scheduler is idle.
-    func execute(_ schedulerJobs: SchedulerJob...) async {
-        await execute {
+    func scheduleAndWait(_ schedulerJobs: SchedulerJob...) async {
+        await scheduleAndWait {
             schedulerJobs
         }
     }
 
     /// Executes the scheduler for an array of jobs and suspends until all jobs have completed.
     ///
-    /// This is a *convenience method* that forwards to ``execute(_:)`` using an explicit array.
+    /// This is a *convenience method* that forwards to ``scheduleAndWait(_:)`` using an explicit array.
     ///
     /// - Parameter schedulerJobs: The jobs to schedule.
     /// - Note: This method returns only after all jobs have completed and the scheduler is idle.
-    func execute(_ schedulerJobs: [SchedulerJob]) async {
-        await execute {
+    func scheduleAndWait(_ schedulerJobs: [SchedulerJob]) async {
+        await scheduleAndWait {
             schedulerJobs
         }
     }
 
-    /// Creates a fresh scheduler instance and starts running jobs built by the given closure without awaiting completion.
+    /// Creates a fresh scheduler instance and executes running jobs built by the given closure without awaiting completion.
     ///
     /// This is a *convenience method* for fire-and-forget usage where you don’t want to manage a scheduler instance.
     /// It starts an asynchronous task that schedules the jobs and returns immediately.
     ///
     /// - Parameter builder: A closure that receives the newly created scheduler and returns the jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``execute(_:)`` instead.
-    static func run(
+    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
+    static func schedule(
         @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (Scheduler) -> [SchedulerJob]
-    ) {
+    ) async {
         let scheduler = Scheduler()
-
-        Task {
-            await scheduler.run {
-                schedulerJobsBuilder(scheduler)
-            }
+        
+        await scheduler.schedule {
+            schedulerJobsBuilder(scheduler)
         }
     }
 
@@ -244,8 +176,8 @@ public extension Scheduler {
     ///
     /// - Parameter builder: A closure that returns one or more jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``execute(_:)`` instead.
-    func run(
+    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
+    func schedule(
         @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable () -> [SchedulerJob]
     ) {
         Task.detached {
@@ -266,34 +198,101 @@ public extension Scheduler {
 
     /// Schedules and runs a variadic list of jobs without awaiting completion.
     ///
-    /// This is a *convenience method* that forwards to ``run(_:)`` using a variadic parameter list.
+    /// This is a *convenience method* that forwards to ``schedule(_:)`` using a variadic parameter list.
     ///
     /// - Parameter schedulerJobs: One or more jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``execute(_:)`` instead.
-    func run(_ schedulerJobs: SchedulerJob...) {
-        run {
+    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
+    func schedule(_ schedulerJobs: SchedulerJob...) {
+        schedule {
             schedulerJobs
         }
     }
 
     /// Schedules and runs an array of jobs without awaiting completion.
     ///
-    /// This is a *convenience method* that forwards to ``run(_:)`` using an explicit array.
+    /// This is a *convenience method* that forwards to ``schedule(_:)`` using an explicit array.
     ///
     /// - Parameter schedulerJobs: The jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``execute(_:)`` instead.
-    func run(_ schedulerJobs: [SchedulerJob]) {
-        run {
+    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
+    func schedule(_ schedulerJobs: [SchedulerJob]) {
+        schedule {
             schedulerJobs
         }
     }
 }
 
+// MARK: - Executing Jobs
+public extension Scheduler {
+    
+    func run(_ schedulerJob: SchedulerJob) {
+        let job = schedulerJob.job
+        
+        self.markJobExecuting(job)
+        
+        Task.detached { [schedulerJob] in
+            try? await schedulerJob.action(job)
+            
+            await self.markJobFinished(job)
+        }
+    }
+    
+    func run(_ job: Job) {
+        guard let jobIndex = index(of: job) else { return }
+        let schedulerJob = jobs[jobIndex].schedulerJob
+        
+        run(schedulerJob)
+    }
+}
+
+// MARK: - Cancelling Jobs
+public extension Scheduler {
+    
+    func cancel(_ schedulerJob: SchedulerJob) async {
+        await cancel(schedulerJob.job)
+    }
+    
+    func cancel(_ job: Job) async {
+        guard let jobIndex = index(of: job) else {
+            // Ensure cron state is cleaned up even if the task entry is missing.
+            cronNextRunDate.removeValue(forKey: job)
+            resumeIfIdle()
+            return
+        }
+
+        // Mark cancelled first so the running loop can observe it.
+        jobs[jobIndex].state = .finished(.cancelled)
+
+        // Snapshot the entry before we remove it from `jobs`.
+        let entry = jobs[jobIndex]
+
+        await cancelAndAwait(
+            entries: [entry],
+            removeJobs: { self.jobs.remove(at: jobIndex) },
+            cleanupCron: { self.cronNextRunDate.removeValue(forKey: job) }
+        )
+    }
+    
+    func cancelAll() async {
+        let entries = jobs
+
+        // Mark all jobs cancelled first so the running loops can observe it.
+        for jobIndex in jobs.indices {
+            jobs[jobIndex].state = .finished(.cancelled)
+        }
+
+        await cancelAndAwait(
+            entries: entries,
+            removeJobs: { self.jobs.removeAll() },
+            cleanupCron: { self.cronNextRunDate.removeAll() }
+        )
+    }
+}
+
 private extension Scheduler {
     
-    func start(_ schedulerJob: SchedulerJob) async {
+    func execute(_ schedulerJob: SchedulerJob) async {
         let job = schedulerJob.job
         
         // Run the job loop inline in the Task that called `execute(_:)`.
@@ -319,7 +318,7 @@ private extension Scheduler {
             
             if jobState(for: job).isCancelled() { break }
             
-            if await self.isJobRunning(job) {
+            if self.isJobRunning(job) {
                 switch schedulerJob.overrunPolicy {
                 case .skip:
                     if let cron = cronExpression, let due = cronDue {
@@ -329,7 +328,7 @@ private extension Scheduler {
                     }
                     continue
                 case .wait:
-                    while await self.isJobRunning(job) && !Task.isCancelled {
+                    while self.isJobRunning(job) && !Task.isCancelled {
                         try? await self.sleep(for: .milliseconds(10))
                     }
                 case .overlap:
@@ -344,49 +343,80 @@ private extension Scheduler {
                     cronNextRunDate[job] = next
                 }
             }
-            await self.markJobExecuting(job)
             
-            // Execute the job action outside the actor so a long-running or
-            // awaiting action doesn't block the scheduler's actor executor and
-            // prevent other job loops from making progress.
-            // The action will mark the job finished when it completes.
-            self.runJobAction(schedulerJob)
+            self.run(schedulerJob)
             
             guard !Task.isCancelled else { break }
             
             if jobState(for: job) == .finished(.cancelled) { break }
-            
-            // Note: we no longer call `markJobFinished` inline here because
-            // the detached task running the action is responsible for calling
-            // it when the action completes.
         }
         
         // Final cleanup in case of cancellation
-        await self.removeTaskAndFinish(job)
+        self.removeTaskAndFinish(job)
     }
     
-    private func isJobRunning(_ job: Job) async -> Bool {
+    func cancelAndAwait(
+        entries: [JobEntry],
+        removeJobs: () -> Void,
+        cleanupCron: () -> Void
+    ) async {
+        // Cancel the underlying tasks.
+        for entry in entries {
+            entry.task.cancel()
+        }
+
+        // Remove entries from our list so `waitUntilIdle()` can complete.
+        removeJobs()
+
+        // Await task completion.
+        for entry in entries {
+            _ = await entry.task.value
+        }
+
+        cleanupCron()
+        resumeIfIdle()
+    }
+    
+    /// Suspends the current task until all scheduled jobs have completed and the scheduler becomes idle.
+    ///
+    /// This method returns immediately if there are no running or scheduled jobs.
+    /// Otherwise, it suspends the caller using a checked continuation and resumes only when all active jobs
+    /// have finished executing and the internal scheduler state is idle.
+    ///
+    /// Use this to await for complete quiescence of the scheduler, for example when shutting down or testing.
+    ///
+    /// - Note: If a job is added after calling `waitUntilIdle()`, this method does not wait for newly
+    ///         scheduled jobs. It only waits for jobs that were running or scheduled at the time of the call.
+    ///
+    func waitUntilIdle() async {
+        if jobs.isEmpty { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            idleContinuation = continuation
+        }
+    }
+    
+    func isJobRunning(_ job: Job) -> Bool {
         guard let idx = index(of: job) else { return false }
         return jobs[idx].state == .executing
     }
 
-    private func markJobRunning(_ job: Job) async {
+    func markJobRunning(_ job: Job) {
         guard let idx = index(of: job) else { return }
         jobs[idx].state = .running
     }
 
-    private func markJobExecuting(_ job: Job) async {
+    func markJobExecuting(_ job: Job) {
         guard let idx = index(of: job) else { return }
         jobs[idx].state = .executing
     }
 
-    private func markJobFinished(_ job: Job) async {
+    func markJobFinished(_ job: Job) {
         guard let idx = index(of: job) else { return }
         if case .finished = jobs[idx].state { return }
         jobs[idx].state = .running
     }
 
-    private func removeTaskAndFinish(_ job: Job) async {
+    func removeTaskAndFinish(_ job: Job) {
         if let idx = index(of: job) {
             jobs[idx].state = .finished(.cancelled)
             jobs.remove(at: idx)
@@ -394,15 +424,6 @@ private extension Scheduler {
 
         cronNextRunDate.removeValue(forKey: job)
         resumeIfIdle()
-    }
-    
-    // run job action off the actor so the actor isn't blocked
-    private func runJobAction(_ schedulerJob: SchedulerJob) {
-        let job = schedulerJob.job
-        Task.detached { [schedulerJob] in
-            try? await schedulerJob.action(job)
-            await self.markJobFinished(job)
-        }
     }
     
     func resumeIfIdle() {
