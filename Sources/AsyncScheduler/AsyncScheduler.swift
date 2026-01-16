@@ -206,7 +206,7 @@ extension Scheduler: Identifiable {}
 public extension Scheduler {
     
     func jobState(for job: Job) -> JobState {
-        guard let jobIndex = index(of: job) else { return .idle }
+        guard let jobIndex = index(of: job) else { return .idle() }
         return jobs[jobIndex].state
     }
 }
@@ -284,8 +284,8 @@ public extension Scheduler {
     func pause(_ job: Job) {
         guard let jobIndex = index(of: job) else { return }
         if case .finished = jobs[jobIndex].state { return }
-        if jobs[jobIndex].state == .paused { return }
-        jobs[jobIndex].state = .paused
+        if jobs[jobIndex].state == .paused() { return }
+        jobs[jobIndex].state = .paused()
     }
     
     func pause(_ schedulerJob: SchedulerJob) {
@@ -298,8 +298,8 @@ public extension Scheduler {
 
     func resume(_ job: Job) {
         guard let jobIndex = index(of: job) else { return }
-        if jobs[jobIndex].state == .paused {
-            jobs[jobIndex].state = .running
+        if jobs[jobIndex].state == .paused() {
+            jobs[jobIndex].state = .running(since: jobs[jobIndex].runningSince ?? Date())
         }
     }
     
@@ -331,7 +331,7 @@ private extension Scheduler {
         while !Task.isCancelled {
             // If the job was cancelled via actor state, stop.
             if jobState(for: job).isCancelled() { break }
-            if jobState(for: job) == .paused {
+            if jobState(for: job) == .paused() {
                 await waitWhilePaused(job)
                 continue
             }
@@ -351,7 +351,7 @@ private extension Scheduler {
             guard !Task.isCancelled else { break }
             
             if jobState(for: job).isCancelled() { break }
-            if jobState(for: job) == .paused {
+            if jobState(for: job) == .paused() {
                 await waitWhilePaused(job)
                 continue
             }
@@ -435,24 +435,24 @@ private extension Scheduler {
     
     func isJobRunning(_ job: Job) -> Bool {
         guard let idx = index(of: job) else { return false }
-        return jobs[idx].state == .executing
+        return jobs[idx].state == .executing()
     }
 
     func markJobRunning(_ job: Job) {
         guard let idx = index(of: job) else { return }
-        jobs[idx].state = .running
+        jobs[idx].state = .running(since: jobs[idx].runningSince ?? Date())
     }
 
     func markJobExecuting(_ job: Job) {
         guard let idx = index(of: job) else { return }
-        jobs[idx].state = .executing
+        jobs[idx].state = .executing()
     }
 
     func markJobFinished(_ job: Job) {
         guard let idx = index(of: job) else { return }
         if case .finished = jobs[idx].state { return }
-        if jobs[idx].state == .paused { return }
-        jobs[idx].state = .running
+        if jobs[idx].state == .paused() { return }
+        jobs[idx].state = .running(since: jobs[idx].runningSince ?? Date())
     }
 
     func removeTaskAndFinish(_ job: Job) {
@@ -506,7 +506,7 @@ private extension Scheduler {
     }
     
     func waitWhilePaused(_ job: Job) async {
-        while jobState(for: job) == .paused && !Task.isCancelled {
+        while jobState(for: job) == .paused() && !Task.isCancelled {
             try? await sleep(for: .milliseconds(10))
         }
     }
