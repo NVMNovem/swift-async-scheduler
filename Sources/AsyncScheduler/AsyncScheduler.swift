@@ -52,7 +52,7 @@ public actor Scheduler: AsyncObservable {
     @discardableResult
     private func schedule(_ schedulerJob: SchedulerJob) -> Job {
         let task = Task {
-            await self.execute(schedulerJob)
+            await self.fire(schedulerJob)
         }
 
         let job = schedulerJob.job
@@ -74,7 +74,7 @@ extension Scheduler: Identifiable {}
 // MARK: - Scheduling Jobs
 public extension Scheduler {
 
-    /// Creates a fresh scheduler instance, builds jobs, schedules them, and suspends until the scheduler is idle.
+    /// Schedules and runs jobs defined by a builder closure and suspends until the scheduler is idle on a fresh scheduler instance.
     ///
     /// This is a *convenience method* for one-off execution without needing to manually instantiate an
     /// `Scheduler`. It is especially useful in tests and short-lived command flows where you want
@@ -85,16 +85,16 @@ public extension Scheduler {
     /// - Parameter builder: A closure that receives the newly created scheduler and returns the jobs to schedule.
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
-    static func scheduleAndWait(
+    static func runAndWait(
         @SchedulerJobBuilder _ builder: @Sendable (Scheduler) -> [SchedulerJob]
     ) async {
         let scheduler = Scheduler()
-        await scheduler.scheduleAndWait {
+        await scheduler.runAndWait {
             builder(scheduler)
         }
     }
 
-    /// Executes the scheduler with jobs provided by the given builder and suspends until all jobs have completed.
+    /// Schedules and runs jobs provided by the given builder and suspends until the scheduler is idle.
     ///
     /// This method constructs one or more `SchedulerJob` instances using the provided builder closure,
     /// schedules them for execution, and then suspends until the scheduler becomes fully idle (i.e. all
@@ -106,7 +106,7 @@ public extension Scheduler {
     /// - Parameter builder: A closure that returns one or more `SchedulerJob`s.
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
-    func scheduleAndWait(
+    func runAndWait(
         @SchedulerJobBuilder _ schedulerJobsBuilder: @Sendable () -> [SchedulerJob]
     ) async {
         let schedulerJobs = schedulerJobsBuilder()
@@ -125,49 +125,49 @@ public extension Scheduler {
         await self.waitUntilIdle()
     }
 
-    /// Executes the scheduler for a variadic list of jobs and suspends until all jobs have completed.
+    /// Schedules and runs a variadic list of jobs and suspends until the scheduler is idle.
     ///
-    /// This is a *convenience method* that forwards to ``scheduleAndWait(_:)`` using a variadic parameter list.
+    /// This is a *convenience method* that forwards to ``runAndWait(_:)`` using a variadic parameter list.
     ///
     /// - Parameter schedulerJobs: One or more jobs to schedule.
     /// - Note: This method returns only after all jobs have completed and the scheduler is idle.
-    func scheduleAndWait(_ schedulerJobs: SchedulerJob...) async {
-        await scheduleAndWait {
+    func runAndWait(_ schedulerJobs: SchedulerJob...) async {
+        await runAndWait {
             schedulerJobs
         }
     }
 
-    /// Executes the scheduler for an array of jobs and suspends until all jobs have completed.
+    /// Schedules and runs an array of jobs and suspends until the scheduler is idle.
     ///
-    /// This is a *convenience method* that forwards to ``scheduleAndWait(_:)`` using an explicit array.
+    /// This is a *convenience method* that forwards to ``runAndWait(_:)`` using an explicit array.
     ///
     /// - Parameter schedulerJobs: The jobs to schedule.
     /// - Note: This method returns only after all jobs have completed and the scheduler is idle.
-    func scheduleAndWait(_ schedulerJobs: [SchedulerJob]) async {
-        await scheduleAndWait {
+    func runAndWait(_ schedulerJobs: [SchedulerJob]) async {
+        await runAndWait {
             schedulerJobs
         }
     }
 
-    /// Creates a fresh scheduler instance and executes running jobs built by the given closure without awaiting completion.
+    /// Schedules and runs jobs defined by a builder closure without awaiting completion on a fresh scheduler instance.
     ///
     /// This is a *convenience method* for fire-and-forget usage where you don’t want to manage a scheduler instance.
-    /// It starts an asynchronous task that schedules the jobs and returns immediately.
+    /// It schedules and runs the jobs and returns immediately.
     ///
     /// - Parameter builder: A closure that receives the newly created scheduler and returns the jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
-    static func schedule(
+    ///   If you need to await completion, use ``runAndWait(_:)`` instead.
+    static func run(
         @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (Scheduler) -> [SchedulerJob]
     ) async {
         let scheduler = Scheduler()
         
-        await scheduler.schedule {
+        await scheduler.run {
             schedulerJobsBuilder(scheduler)
         }
     }
 
-    /// Schedules and runs jobs defined by a builder closure as detached asynchronous tasks.
+    /// Schedules and runs jobs defined by a builder closure without awaiting completion.
     ///
     /// This method constructs one or more `SchedulerJob` instances using the provided builder closure,
     /// schedules them for execution, and returns immediately without waiting for their completion.
@@ -176,8 +176,8 @@ public extension Scheduler {
     ///
     /// - Parameter builder: A closure that returns one or more jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
-    func schedule(
+    ///   If you need to await completion, use ``runAndWait(_:)`` instead.
+    func run(
         @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable () -> [SchedulerJob]
     ) {
         Task.detached {
@@ -198,26 +198,26 @@ public extension Scheduler {
 
     /// Schedules and runs a variadic list of jobs without awaiting completion.
     ///
-    /// This is a *convenience method* that forwards to ``schedule(_:)`` using a variadic parameter list.
+    /// This is a *convenience method* that forwards to ``run(_:)`` using a variadic parameter list.
     ///
     /// - Parameter schedulerJobs: One or more jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
-    func schedule(_ schedulerJobs: SchedulerJob...) {
-        schedule {
+    ///   If you need to await completion, use ``runAndWait(_:)`` instead.
+    func run(_ schedulerJobs: SchedulerJob...) {
+        run {
             schedulerJobs
         }
     }
 
     /// Schedules and runs an array of jobs without awaiting completion.
     ///
-    /// This is a *convenience method* that forwards to ``schedule(_:)`` using an explicit array.
+    /// This is a *convenience method* that forwards to ``run(_:)`` using an explicit array.
     ///
     /// - Parameter schedulerJobs: The jobs to schedule.
     /// - Important: This method does not wait for job completion.
-    ///   If you need to await completion, use ``scheduleAndWait(_:)`` instead.
-    func schedule(_ schedulerJobs: [SchedulerJob]) {
-        schedule {
+    ///   If you need to await completion, use ``runAndWait(_:)`` instead.
+    func run(_ schedulerJobs: [SchedulerJob]) {
+        run {
             schedulerJobs
         }
     }
@@ -226,7 +226,7 @@ public extension Scheduler {
 // MARK: - Executing Jobs
 public extension Scheduler {
     
-    func run(_ schedulerJob: SchedulerJob) {
+    func execute(_ schedulerJob: SchedulerJob) {
         let job = schedulerJob.job
         
         self.markJobExecuting(job)
@@ -238,11 +238,11 @@ public extension Scheduler {
         }
     }
     
-    func run(_ job: Job) {
+    func execute(_ job: Job) {
         guard let jobIndex = index(of: job) else { return }
         let schedulerJob = jobs[jobIndex].schedulerJob
         
-        run(schedulerJob)
+        execute(schedulerJob)
     }
 }
 
@@ -292,7 +292,7 @@ public extension Scheduler {
 
 private extension Scheduler {
     
-    func execute(_ schedulerJob: SchedulerJob) async {
+    func fire(_ schedulerJob: SchedulerJob) async {
         let job = schedulerJob.job
         
         // Run the job loop inline in the Task that called `execute(_:)`.
