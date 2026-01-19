@@ -1,0 +1,15 @@
+{
+  "originHash" : "ce5343d9596b421fd79a754fe635aab206dd4c56e11dc8850739c2b9d232adc6",
+  "pins" : [
+    {
+      "identity" : "swift-async-observer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/NVMNovem/swift-async-observer",
+      "state" : {
+        "revision" : "d3cb18907e5d2a8e835dd71ba2362ec6f764d121",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}

@@ -7,14 +7,16 @@ let package = Package(
     name: "swift-async-scheduler",
     platforms: [.macOS(.v13), .iOS(.v16), .watchOS(.v9), .tvOS(.v16)],
     products: [
-        .library(name: "AsyncScheduler", targets: ["AsyncScheduler"]),
-        .library(name: "AsyncObserver", targets: ["AsyncObserver"]),
+        .library(name: "AsyncScheduler", targets: ["AsyncScheduler"])
+    ],
+    dependencies: [
+        .package(url: "https://github.com/NVMNovem/swift-async-observer", .upToNextMinor(from: Version(1, 0, 0)))
     ],
     targets: [
         .target(
             name: "AsyncScheduler",
             dependencies: [
-                "AsyncObserver"
+                .product(name: "AsyncObserver", package: "swift-async-observer")
             ]
         ),
         .testTarget(
@@ -22,9 +24,6 @@ let package = Package(
             dependencies: [
                 "AsyncScheduler"
             ]
-        ),
-        .target(
-            name: "AsyncObserver"
-        ),
+        )
     ]
 )
