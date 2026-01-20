@@ -205,6 +205,10 @@ extension AsyncScheduler: Identifiable {}
 // MARK: - Job State
 public extension AsyncScheduler {
     
+    func isIdle() -> Bool {
+        jobs.isEmpty
+    }
+    
     func jobState(for job: Job) -> JobState {
         guard let jobIndex = index(of: job) else { return .idle() }
         return jobs[jobIndex].state
