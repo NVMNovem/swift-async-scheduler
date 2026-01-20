@@ -8,7 +8,7 @@
 import Foundation
 import AsyncObserver
 
-public actor Scheduler: AsyncObservable {
+public actor AsyncScheduler: AsyncObservable {
     
     public let id: UUID
     
@@ -61,9 +61,9 @@ public actor Scheduler: AsyncObservable {
     /// - Note: This method returns only after all jobs scheduled by the builder have completed and the scheduler
     ///   has become idle.
     public static func runAndWait(
-        @SchedulerJobBuilder _ builder: @Sendable (Scheduler) -> [SchedulerJob]
+        @SchedulerJobBuilder _ builder: @Sendable (AsyncScheduler) -> [SchedulerJob]
     ) async {
-        let scheduler = Scheduler()
+        let scheduler = AsyncScheduler()
         await scheduler.runAndWait {
             builder(scheduler)
         }
@@ -133,9 +133,9 @@ public actor Scheduler: AsyncObservable {
     /// - Important: This method does not wait for job completion.
     ///   If you need to await completion, use ``runAndWait(_:)`` instead.
     public static func run(
-        @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (Scheduler) -> [SchedulerJob]
+        @SchedulerJobBuilder _ schedulerJobsBuilder: @escaping @Sendable (AsyncScheduler) -> [SchedulerJob]
     ) async {
-        let scheduler = Scheduler()
+        let scheduler = AsyncScheduler()
         
         await scheduler.run {
             schedulerJobsBuilder(scheduler)
@@ -198,12 +198,12 @@ public actor Scheduler: AsyncObservable {
     }
 }
 
-extension Scheduler: Sendable {}
+extension AsyncScheduler: Sendable {}
 
-extension Scheduler: Identifiable {}
+extension AsyncScheduler: Identifiable {}
 
 // MARK: - Job State
-public extension Scheduler {
+public extension AsyncScheduler {
     
     func jobState(for job: Job) -> JobState {
         guard let jobIndex = index(of: job) else { return .idle() }
@@ -212,7 +212,7 @@ public extension Scheduler {
 }
 
 // MARK: - Executing Jobs
-public extension Scheduler {
+public extension AsyncScheduler {
     
     func execute(_ schedulerJob: SchedulerJob) {
         let job = schedulerJob.job
@@ -235,7 +235,7 @@ public extension Scheduler {
 }
 
 // MARK: - Cancelling Jobs
-public extension Scheduler {
+public extension AsyncScheduler {
     
     func cancel(_ schedulerJob: SchedulerJob) async {
         await cancel(schedulerJob.job)
@@ -279,7 +279,7 @@ public extension Scheduler {
 }
 
 // MARK: - Pausing Jobs
-public extension Scheduler {
+public extension AsyncScheduler {
 
     func pause(_ job: Job) {
         guard let jobIndex = index(of: job) else { return }
@@ -294,7 +294,7 @@ public extension Scheduler {
 }
 
 // MARK: - Resuming Jobs
-public extension Scheduler {
+public extension AsyncScheduler {
 
     func resume(_ job: Job) {
         guard let jobIndex = index(of: job) else { return }
@@ -308,7 +308,7 @@ public extension Scheduler {
     }
 }
 
-private extension Scheduler {
+private extension AsyncScheduler {
     
     @discardableResult
     private func schedule(_ schedulerJob: SchedulerJob) -> Job {
@@ -512,7 +512,7 @@ private extension Scheduler {
     }
 }
 
-fileprivate extension Scheduler {
+fileprivate extension AsyncScheduler {
     
     func sleep(for duration: Duration) async throws {
         let ns = duration.nanosecondsApprox

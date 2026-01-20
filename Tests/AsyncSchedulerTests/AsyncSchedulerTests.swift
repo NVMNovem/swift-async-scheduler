@@ -12,7 +12,7 @@ actor Box<T> {
 
 @Test
 func testIntervalJobExecutesMultipleTimes() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
     let counter = Box(0)
 
     let schedulerJob = SchedulerJob(scheduler, .interval(.seconds(0.05))) {
@@ -29,7 +29,7 @@ func testIntervalJobExecutesMultipleTimes() async throws {
 
 @Test
 func testIntervalJobStopsAfterCancellation() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
     let counter = Box(0)
 
     let schedulerJob = SchedulerJob(scheduler, .interval(.nanoseconds(50_000_000))) {
@@ -49,7 +49,7 @@ func testIntervalJobStopsAfterCancellation() async throws {
 
 @Test
 func testDailyScheduleSchedulesNextRunTomorrowIfTodayPassed() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
 
     // Daily schedule at 00:00 local time
     // We force next run to be > 0 seconds (tomorrow)
@@ -78,7 +78,7 @@ func testDailyScheduleSchedulesNextRunTomorrowIfTodayPassed() async throws {
 
 @Test
 func testCancelAllStopsAllSchedulerJobs() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
     let a = Box(0)
     let b = Box(0)
 
@@ -107,7 +107,7 @@ func testRunWaitsUntilIdleAfterCancelAll() async throws {
     enum TimeoutError: Error { case timedOut }
     let timeoutNs: UInt64 = 2_000_000_000 // 2s timeout to avoid hanging forever
 
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
 
     await withThrowingTaskGroup(of: Void.self) { group in
         // Task A: run the scheduler normally
@@ -157,7 +157,7 @@ func testRunWaitsUntilIdleAfterCancelJob() async throws {
     enum TimeoutError: Error { case timedOut }
     let timeoutNs: UInt64 = 2_000_000_000 // 2s timeout to avoid hanging forever
 
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
 
     await #expect(throws: TimeoutError.timedOut) {
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -201,7 +201,7 @@ func testRunWaitsUntilIdleAfterCancelJob() async throws {
 
 @Test
 func testCronJobExecutesMultipleTimes() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
     let counter = Box(0)
 
     await scheduler.run {
@@ -221,7 +221,7 @@ func testCronJobExecutesMultipleTimes() async throws {
 
 @Test
 func testCronJobExecutesEvery2Seconds() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
     let counter = Box(0)
 
     let schedulerJob = SchedulerJob(scheduler, .cron("*/3 * * * * *")) {
@@ -242,7 +242,7 @@ func testCronJobExecutesEvery2Seconds() async throws {
 
 @Test
 func testCronJobStopsAfterCancellation() async throws {
-    let scheduler = Scheduler()
+    let scheduler = AsyncScheduler()
     let counter = Box(0)
 
     let schedulerJob = SchedulerJob(scheduler, .cron("*/1 * * * * *")) {

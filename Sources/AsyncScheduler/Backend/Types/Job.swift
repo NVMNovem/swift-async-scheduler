@@ -19,7 +19,7 @@ public struct Job: ExpressibleByStringLiteral {
         self.id = id
     }
     
-    public init?(name: String, scheduler: Scheduler) async {
+    public init?(name: String, scheduler: AsyncScheduler) async {
         guard let jobEntry = await scheduler.jobs.first(where: { $0.schedulerJob.name == name })
         else { return nil }
         
