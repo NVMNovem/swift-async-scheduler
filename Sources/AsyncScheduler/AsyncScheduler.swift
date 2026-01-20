@@ -12,23 +12,49 @@ public actor AsyncScheduler: AsyncObservable {
     
     public let id: UUID
     
-    public var asyncObservers: [AsyncObserver<[JobEntry]>] = []
+    public var asyncObservers: [AsyncObserver<[Job: JobState]>] = []
 
     internal private(set) var jobs: [JobEntry] {
         willSet {
-            let currentJobs = Set(jobs.map { $0.schedulerJob.job })
-            let updatedJobs = Set(newValue.map { $0.schedulerJob.job })
+            let currentJobs: Set<Job> = Set(jobs.map { $0.schedulerJob.job })
+            let updatedJobs: Set<Job> = Set(newValue.map { $0.schedulerJob.job })
             let removedJobs = currentJobs.subtracting(updatedJobs)
             if !removedJobs.isEmpty {
                 if newValue.isEmpty {
                     print("[Scheduler] All jobs removed; scheduler is now idle.")
                 } else {
-                    print("[Scheduler] Removed jobs: \(removedJobs.map({ $0.description }).joined(separator: ", "))" )
+                    let removedDescriptions: [String] = removedJobs.map { (job: Job) -> String in job.description }
+                    print("[Scheduler] Removed jobs: \(removedDescriptions.joined(separator: ", "))")
                 }
             }
         }
         didSet {
-            notifyAsyncObservers(jobs)
+            let oldJobStates: [Job: JobState] = oldValue.reduce(into: [:]) { $0[$1.schedulerJob.job] = $1.state }
+            let currentJobStates: [Job: JobState] = jobs.reduce(into: [:]) { $0[$1.schedulerJob.job] = $1.state }
+
+            var updatedJobStates: [Job: JobState] = [:]
+
+            // changed + removed
+            for (job, oldState) in oldJobStates {
+                if let currentState = currentJobStates[job] {
+                    if oldState != currentState {
+                        // changed
+                        updatedJobStates[job] = currentState
+                    }
+                } else {
+                    // removed
+                    updatedJobStates[job] = .idle(since: Date())
+                }
+            }
+
+            for (job, currentState) in currentJobStates where oldJobStates[job] == nil {
+                // added
+                updatedJobStates[job] = currentState
+            }
+
+            if !updatedJobStates.isEmpty {
+                notifyAsyncObservers(updatedJobStates)
+            }
         }
     }
     
@@ -536,3 +562,4 @@ fileprivate extension AsyncScheduler {
         }
     }
 }
+
