@@ -10,7 +10,7 @@ let package = Package(
         .library(name: "AsyncScheduler", targets: ["AsyncScheduler"])
     ],
     dependencies: [
-        .package(url: "https://github.com/NVMNovem/swift-async-observer", .upToNextMinor(from: Version(1, 0, 0)))
+        .package(url: "https://github.com/NVMNovem/swift-async-observer", .upToNextMinor(from: Version(1,0,0)))
     ],
     targets: [
         .target(
