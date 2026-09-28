@@ -25,7 +25,11 @@ public struct SchedulerJob {
     
     public private(set) var errorPolicy: ErrorPolicy
     public private(set) var overrunPolicy: OverrunPolicy
-    
+
+    /// The maximum time a single run may take. When exceeded, the run is cancelled and the job is
+    /// released, so later runs aren't skipped forever by a run that never returns. `nil` means no limit.
+    public private(set) var timeout: Duration?
+
     public var state: JobState? {
         get async {
             await scheduler.jobState(for: job)
@@ -84,6 +88,12 @@ public extension SchedulerJob {
     func overrunPolicy(_ overrunPolicy: OverrunPolicy) -> Self {
         var copy = self
         copy.overrunPolicy = overrunPolicy
+        return copy
+    }
+
+    func timeout(_ timeout: Duration) -> Self {
+        var copy = self
+        copy.timeout = timeout
         return copy
     }
 }

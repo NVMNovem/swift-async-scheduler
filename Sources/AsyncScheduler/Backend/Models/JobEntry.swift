@@ -12,6 +12,7 @@ public struct JobEntry {
     public let schedulerJob: SchedulerJob
     
     internal var task: Task<Void, Never>
+    internal var execution: Execution?
     internal private(set) var runningDate: Date
     public internal(set) var state: JobState {
         didSet {
@@ -33,6 +34,16 @@ public struct JobEntry {
 }
 
 extension JobEntry: Sendable {}
+
+internal extension JobEntry {
+
+    /// A single in-flight run of the job's action.
+    struct Execution: Sendable {
+        let id: UUID
+        let task: Task<Void, Never>
+        let timeoutTask: Task<Void, Never>?
+    }
+}
 
 internal extension JobEntry {
     

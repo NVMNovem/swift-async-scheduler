@@ -260,3 +260,86 @@ func testCronJobStopsAfterCancellation() async throws {
     let finalCount = await counter.get()
     #expect(finalCount == afterCancel, "Counter value: \(finalCount)")
 }
+
+/// Never returns and ignores cancellation, like a network call stuck waiting for a reply.
+private func hangForever() async {
+    await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+}
+
+/// Like a network call that only returns once the server answers, whether or not the task was cancelled.
+private func sleepIgnoringCancellation(nanoseconds: Int) async {
+    await withUnsafeContinuation { (continuation: UnsafeContinuation<Void, Never>) in
+        DispatchQueue.global().asyncAfter(deadline: .now() + .nanoseconds(nanoseconds)) {
+            continuation.resume()
+        }
+    }
+}
+
+@Test
+func testHungRunBlocksLaterRunsWithoutTimeout() async throws {
+    let scheduler = AsyncScheduler()
+    let starts = Box(0)
+
+    let schedulerJob = SchedulerJob(scheduler, .interval(.milliseconds(50))) {
+        await starts.update { $0 += 1 }
+        await hangForever()
+    }
+    await scheduler.run(schedulerJob)
+
+    try await Task.sleep(nanoseconds: 400_000_000)
+    await scheduler.cancel(schedulerJob.job)
+
+    let count = await starts.get()
+    #expect(count == 1, "Starts: \(count)")
+}
+
+@Test
+func testHungRunIsReleasedAfterTimeout() async throws {
+    let scheduler = AsyncScheduler()
+    let starts = Box(0)
+
+    let schedulerJob = SchedulerJob(scheduler, .interval(.milliseconds(50))) {
+        await starts.update { $0 += 1 }
+        if await starts.get() == 1 {
+            await hangForever()
+        }
+    }
+    .timeout(.milliseconds(150))
+    await scheduler.run(schedulerJob)
+
+    try await Task.sleep(nanoseconds: 600_000_000)
+    await scheduler.cancel(schedulerJob.job)
+
+    let count = await starts.get()
+    #expect(count > 1, "Starts: \(count)")
+}
+
+@Test
+func testTimedOutRunFinishingLateDoesNotReleaseNewerRun() async throws {
+    let scheduler = AsyncScheduler()
+    let starts = Box(0)
+    let overlapping = Box(false)
+    let executing = Box(false)
+
+    // The first run outlives its timeout and then returns while the second run is still executing.
+    // That late return must not mark the job as idle, or a third run would overlap the second.
+    let schedulerJob = SchedulerJob(scheduler, .interval(.milliseconds(20))) {
+        await starts.update { $0 += 1 }
+        let run = await starts.get()
+        if run == 1 {
+            await sleepIgnoringCancellation(nanoseconds: 200_000_000)
+        } else {
+            if await executing.get() { await overlapping.set(true) }
+            await executing.set(true)
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            await executing.set(false)
+        }
+    }
+    .timeout(.milliseconds(100))
+    await scheduler.run(schedulerJob)
+
+    try await Task.sleep(nanoseconds: 350_000_000)
+    await scheduler.cancel(schedulerJob.job)
+
+    #expect(await overlapping.get() == false)
+}

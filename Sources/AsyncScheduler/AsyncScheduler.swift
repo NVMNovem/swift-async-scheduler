@@ -247,13 +247,27 @@ public extension AsyncScheduler {
     func execute(_ schedulerJob: SchedulerJob) {
         let job = schedulerJob.job
         
-        self.markJobExecuting(job)
-        
-        Task.detached { [schedulerJob] in
+        let executionID = UUID()
+
+        let task = Task.detached { [schedulerJob] in
             try? await schedulerJob.action(job)
-            
-            await self.markJobFinished(job)
+
+            await self.markJobFinished(job, executionID: executionID)
         }
+
+        var timeoutTask: Task<Void, Never>? = nil
+        if let timeout = schedulerJob.timeout {
+            timeoutTask = Task.detached {
+                do {
+                    try await Task.sleep(nanoseconds: timeout.nanosecondsApprox)
+                } catch {
+                    return
+                }
+                await self.timeOut(job, executionID: executionID)
+            }
+        }
+
+        self.markJobExecuting(job, execution: JobEntry.Execution(id: executionID, task: task, timeoutTask: timeoutTask))
     }
     
     func execute(_ job: Job) {
@@ -389,6 +403,9 @@ private extension AsyncScheduler {
             if self.isJobRunning(job) {
                 switch schedulerJob.overrunPolicy {
                 case .skip:
+                    if case .executing(let since) = jobState(for: job) {
+                        print("[Scheduler] Skipping a run of '\(schedulerJob.name)': the previous run is still executing since \(since).")
+                    }
                     if let cron = cronExpression, let due = cronDue {
                         if let next = try? cron.nextDate(after: due) {
                             cronNextRunDate[job] = next
@@ -473,16 +490,40 @@ private extension AsyncScheduler {
         jobs[idx].state = .running(since: jobs[idx].runningSince ?? Date())
     }
 
-    func markJobExecuting(_ job: Job) {
+    func markJobExecuting(_ job: Job, execution: JobEntry.Execution) {
         guard let idx = index(of: job) else { return }
+        jobs[idx].execution = execution
         jobs[idx].state = .executing()
     }
 
-    func markJobFinished(_ job: Job) {
+    func markJobFinished(_ job: Job, executionID: UUID) {
         guard let idx = index(of: job) else { return }
+        // A run that already timed out can still return later; it must not touch the state of a newer run.
+        guard jobs[idx].execution?.id == executionID else { return }
+        jobs[idx].execution?.timeoutTask?.cancel()
+        jobs[idx].execution = nil
+
         if case .finished = jobs[idx].state { return }
         if jobs[idx].state == .paused() { return }
         jobs[idx].state = .running(since: jobs[idx].runningSince ?? Date())
+    }
+
+    func timeOut(_ job: Job, executionID: UUID) {
+        guard let idx = index(of: job),
+              let execution = jobs[idx].execution, execution.id == executionID
+        else { return }
+
+        let schedulerJob = jobs[idx].schedulerJob
+        print("[Scheduler] '\(schedulerJob.name)' exceeded its timeout of \(schedulerJob.timeout ?? .zero); cancelling this run so later runs aren't skipped.")
+
+        // Cancellation is cooperative: an action that ignores it keeps running detached,
+        // but the job itself is released and its next runs go ahead.
+        execution.task.cancel()
+        jobs[idx].execution = nil
+
+        if jobs[idx].state == .executing() {
+            jobs[idx].state = .running(since: jobs[idx].runningSince ?? Date())
+        }
     }
 
     func removeTaskAndFinish(_ job: Job) {
